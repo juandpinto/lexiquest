@@ -4,5 +4,5 @@ emoji: 🚀
 colorFrom: purple
 colorTo: indigo
 sdk: gradio
-app_file: main.py
+app_file: app.py
 ---

@@ -94,20 +94,70 @@ class State(TypedDict):
 
 # --- LLM Selection Logic ---
 def get_llm(api_key_from_ui: Optional[str] = None):
-    """Selects and initializes an LLM based on API key availability."""
-    openai_api_key = api_key_from_ui or os.environ.get("OPENAI_API_KEY")
-    google_api_key = os.environ.get("GOOGLE_API_KEY")
+    """
+    Selects and initializes an LLM based on API key availability and type.
+    Priority:
+    1. API key from UI (detects OpenAI vs Google based on prefix).
+       - OpenAI keys typically start with "sk-".
+       - Google API keys (Gemini / Vertex AI) often start with "AIza".
+    2. OPENAI_API_KEY from environment.
+    3. GOOGLE_API_KEY from environment.
+    4. Ollama as a fallback.
+    Returns:
+        tuple: (llm_instance, llm_info_string)
+    Raises:
+        ValueError: If no LLM can be initialized.
+    """
 
-    if openai_api_key:
-        print("Using OpenAI LLM.")
-        return ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key, temperature=0.8), "OpenAI (GPT-3.5-Turbo)"
-    elif google_api_key:
-        print("Using Google LLM.")
-        return ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=google_api_key, temperature=0.8), "Google (Gemini-Flash)"
-    else:
-        print("Using Ollama LLM (gemma3).")
+    # Attempt with UI key first
+    if api_key_from_ui:
+        if api_key_from_ui.startswith("sk-"):
+            print("Attempting to use OpenAI LLM with API key from UI.")
+            try:
+                llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=api_key_from_ui, temperature=0.8)
+                return llm, "OpenAI (GPT-3.5-Turbo via UI)"
+            except Exception as e:
+                print(f"Error initializing OpenAI with UI key: {e}. Falling back to environment variables or Ollama.")
+        elif api_key_from_ui.startswith("AIza"): # Common prefix for Google API keys
+            print("Attempting to use Google LLM with API key from UI.")
+            try:
+                llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key_from_ui, temperature=0.8)
+                return llm, "Google (Gemini-Flash via UI)"
+            except Exception as e:
+                print(f"Error initializing Google with UI key: {e}. Falling back to environment variables or Ollama.")
+        else:
+            print(f"API key from UI has an unrecognized prefix ('{api_key_from_ui[:4]}...'). Will try environment variables or Ollama.")
+
+    # Attempt with environment variables if UI key is not provided, failed, or had unknown prefix
+    openai_api_key_env = os.environ.get("OPENAI_API_KEY")
+    if openai_api_key_env:
+        print("Attempting to use OpenAI LLM with API key from environment.")
+        try:
+            llm = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=openai_api_key_env, temperature=0.8)
+            return llm, "OpenAI (GPT-3.5-Turbo via ENV)"
+        except Exception as e:
+            print(f"Error initializing OpenAI with ENV key: {e}. Falling back to Google ENV or Ollama.")
+
+    google_api_key_env = os.environ.get("GOOGLE_API_KEY")
+    if google_api_key_env:
+        print("Attempting to use Google LLM with API key from environment.")
+        try:
+            llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=google_api_key_env, temperature=0.8)
+            return llm, "Google (Gemini-Flash via ENV)"
+        except Exception as e:
+            print(f"Error initializing Google with ENV key: {e}. Falling back to Ollama.")
+
+    # Fallback to Ollama
+    print("Attempting to use Ollama LLM (gemma3) as fallback.")
+    try:
         # Ensure Ollama server is running if you use this.
-        return ChatOllama(model="gemma3", temperature=0.8), "Ollama (gemma3)"
+        llm = ChatOllama(model="gemma3", temperature=0.8)
+        return llm, "Ollama (gemma3)"
+    except Exception as e:
+        error_message = f"Error initializing Ollama: {e}. No LLM could be initialized. Please check API keys or ensure Ollama server is running."
+        print(error_message)
+        raise ValueError(error_message) from e
+
 
 # --- LangGraph Workflow Definition ---
 workflow = StateGraph(state_schema=State)
@@ -142,6 +192,7 @@ def chat_interface_function(message_text: str, history_list_of_lists: list, api_
     'history_list_of_lists' is from gr.Chatbot: [[user_msg, ai_msg], ...]
     'api_key_ui' is the API key from the Gradio text input.
     """
+    print(f"api_key_ui: {api_key_ui}")
 
     current_turn_input = {
         **survey_results,
