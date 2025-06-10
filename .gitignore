@@ -1,3 +1,5 @@
 .env
 __pycache__
 flagged
+data
+.webui_secret_key

@@ -1,0 +1,2 @@
+from .narrative_agent import formatted_narrative_prompt
+from .manager_agent import manager_system_prompt
