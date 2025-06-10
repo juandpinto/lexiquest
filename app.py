@@ -96,7 +96,7 @@ def ensure_graph_initialized(api_key_ui: Optional[str]):
         print(f"Initializing graph. App is None: {LANG_GRAPH_APP is None}. API key changed: {PREVIOUS_API_KEY_USED != api_key_ui if PREVIOUS_API_KEY_USED else 'N/A' != api_key_ui}")
         try:
             llm, llm_info = get_llm(api_key_ui)
-            LANG_GRAPH_APP = initialize_graph(llm, CURRENT_THREAD_ID)
+            LANG_GRAPH_APP = initialize_graph(llm)
             CURRENT_LLM_INFO = f"LLM: {llm_info} (Thread: {CURRENT_THREAD_ID})"
             PREVIOUS_API_KEY_USED = api_key_ui
             print(f"Graph initialized successfully with {llm_info} on thread {CURRENT_THREAD_ID}")
