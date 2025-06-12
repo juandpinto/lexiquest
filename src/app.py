@@ -81,7 +81,7 @@ def get_llm(api_key_from_ui: Optional[str] = None):
     print("Attempting to use Ollama LLM (gemma3) as fallback.")
     try:
         # Ensure gemma3 is a valid model name for your ChatOllama setup
-        llm = ChatOllama(model="gemma3", temperature=0.8) # Using a common naming for Ollama models
+        llm = ChatOllama(model="llama3.1", temperature=0.8) # Using a common naming for Ollama models
         return llm, "Ollama (gemma)"
     except Exception as e:
         error_message = f"Error initializing Ollama: {e}. No LLM could be initialized. Please check API keys or ensure Ollama server is running."
