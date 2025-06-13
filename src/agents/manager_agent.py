@@ -1,34 +1,89 @@
-# Manager agent system prompt
-manager_system_prompt = """You are a manager managing the following agents:
+from langchain_core.messages import SystemMessage, AIMessage
+from langgraph.graph.message import add_messages
+from typing import Any, Dict
+from agents.utils import BaseAgent
+from core.states import FullState
 
-    - A narrative agent. Assign narrative-related tasks to this agent.
+
+# Manager agent system prompt
+MANAGER_PROMPT = """
+You are a manager managing the following agents:
+
+- "narrative_agent": Assign narrative-related tasks to this agent.
+- "challenge_agent": Assign challenge-related tasks to this agent.
 
 Assign work to one agent at a time, do not call agents in parallel.
 
 When the narrative agent provides you with a story, make sure it does not include any inappropriate elements for a child. Then return the story to the user.
 
-The user will initiate the conversation with "Let's start!", after which you should refer to the narrative agent for the first part of the story."""
+The user will initiate the conversation with "Let's start!", after which you should refer to the narrative agent for the first part of the story.
+
+Your response MUST be a JSON object with two keys:
+- "next_agent": either "narrative_agent" or "challenge_agent"
+- "task": a string describing the task to assign
+
+Example:
+{"next_agent": "narrative_agent", "task": "Continue the story"}
+"""
 
 
-class ManagerAgent:
-    def __init__(self, narrative_agent):
-        self.narrative_agent = narrative_agent
+class ManagerAgent(BaseAgent):
+    def __init__(self, model):
+        super().__init__(name='Manager Agent')
+        self.model = model
+        self.prompt = MANAGER_PROMPT
 
-    def assign_task(self, task):
-        # Assign a narrative-related task to the narrative agent
-        print(f"Assigning task to narrative agent: {task}")
-        self.narrative_agent.receive_task(task)
+    def __call__(self, state: FullState) -> FullState:
+        """
+        Manage agents, assigning tasks.
 
-    def review_story(self, story):
-        # Ensure the story is appropriate for children
-        if self.is_story_appropriate(story):
-            print("Story is appropriate for children.")
-            return story
-        else:
-            print("Story contains inappropriate elements.")
-            return "The story is not suitable for children."
+        Accepts and returns the global FullState, updating only the relevant namespaces.
+        """
+        print("\n--- Running Manager Agent ---")
 
-    def is_story_appropriate(self, story):
-        # Placeholder for story appropriateness check
-        inappropriate_keywords = ["violence", "death", "scary"]
-        return not any(keyword in story for keyword in inappropriate_keywords)
+        # Generate the next task and agent
+        decision = self.generate_task(state)
+        print(f"Manager decision: {decision}")
+
+        # Add agent metadata before appending
+        if isinstance(decision, AIMessage):
+            decision.metadata = dict(decision.metadata or {})
+            decision.metadata["agent"] = self.name
+
+        # Store the decision in the state for the router node to use
+        state.last_agent = self.name
+        state.full_history.append(f"Manager decision: {decision}")
+
+        # Attach the decision to the state for the router node
+        state.manager_decision = decision
+
+        return state
+
+    def generate_task(self, state: FullState) -> Dict[str, str]:
+        """
+        Use the model to decide the next agent and task.
+        Returns a dict: {"next_agent": ..., "task": ...}
+        """
+        # Prepare a summary of the current state for the prompt
+        narrative_summary = "\n".join([msg.content for msg in state.narrative.story[-3:]])
+        user_message = state.narrative.story[-1].content if state.narrative.story else "Let's start!"
+
+        # prompt = (
+        #     self.prompt
+        #     + "\n\n"
+        #     + f"Recent story:\n{narrative_summary}\n\n"
+        #     + f"Most recent user message: {user_message}\n\n"
+        # )
+
+        # Call the model (assume it returns a stringified JSON object)
+        response = self.model.invoke([SystemMessage(content=self.prompt)] + state.full_history)
+
+        # Check if the response is a valid JSON object
+        import json
+        try:
+            decision = json.loads(response.content)
+        except Exception:
+            # Fallback: default to narrative_agent
+            decision = {"next_agent": "narrative_agent", "task": "Continue the story"}
+
+        return decision
