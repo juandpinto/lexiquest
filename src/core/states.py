@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Sequence, Mapping
 from langchain_core.messages import BaseMessage
 
 # --- Agent-specific namespaces ---
@@ -9,11 +9,13 @@ class NarrativeState(BaseModel):
     story: List[BaseMessage] = Field(default_factory=list)
 
 class ChallengeState(BaseModel):
-    # All assessments administered so far and user responses
-    assessments: List[Dict[str, Any]] = Field(default_factory=list)
-    responses: List[Dict[str, Any]] = Field(default_factory=list)
-    # Optionally, you can add a challenge_history or use Pydantic models for more structure
-    # challenge_history: List[ChallengeTriplet] = Field(default_factory=list)
+    messages: Sequence[BaseMessage] = Field(default_factory=list, description="History of messages")
+    current_narrative_segment: str = Field(default_factory=str, description="The current segment of the story as decided by the manager")
+    narrative_beat_info: Mapping[str, str] = Field(default_factory=dict, description="Key information for the narrative beat")
+    challenge_type: str = Field(default_factory=str, description="Which TILLS subtest to create a challenge for")
+    modality: str = Field(default_factory=str, description="What kind of modality to use")
+    story_history: str = Field(default_factory=str, description="The history of the story so far")
+    challenge_history: list = Field(default_factory=list, description="The history of generated challenges") # A sequence of Challenges objects containing challenge information
 
 class FullState(BaseModel):
     # The full global state, namespaced per agent
