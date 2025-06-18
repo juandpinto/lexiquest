@@ -1,12 +1,11 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
-from agents.narrative_agent import NarrativeAgent
-from agents.challenge_agent import ChallengeAgent
-from agents.manager_agent import ManagerAgent
+from agents import NarrativeAgent, ChallengeAgent, ManagerAgent, alignment_agent
 
 from core.config import survey_results
 from core.states import FullState
+
 
 def initialize_graph(llm):
     # Create agents
@@ -29,12 +28,22 @@ def initialize_graph(llm):
     # Define the multi-agent supervisor graph
     supervisor = (
         StateGraph(FullState)
+        .add_node('alignment_agent', alignment_agent)
         .add_node('manager', manager_agent)
         .add_node('manager_router', manager_router)
         .add_node('narrative_agent', narrative_agent)
         .add_node('challenge_agent', challenge_agent)
 
-        .add_edge(START, 'manager')
+        .add_edge(START, 'alignment_agent')
+        .add_conditional_edges(
+            'alignment_agent',
+            {
+                'invalid_input': END,
+                'valid_input': 'manager',
+            },
+            # Condition function to check if the last message is the warning
+            condition=lambda state: 'invalid_input' if (state.full_history and state.full_history[-1] == "Sorry, your input was not appropriate. Please try again.") else 'valid_input',
+        )
         .add_edge('manager', 'manager_router')
         .add_conditional_edges(
             'manager_router',
