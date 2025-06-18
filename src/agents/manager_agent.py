@@ -81,7 +81,8 @@ class ManagerAgent(BaseAgent):
         # Check if the response is a valid JSON object
         import json
         try:
-            decision = json.loads(response.content)
+            content = response.content.strip().removeprefix('```json').removesuffix('```').strip()
+            decision = json.loads(content)
         except Exception:
             # Fallback: default to narrative_agent
             decision = {"next_agent": "narrative_agent", "task": "Continue the story"}

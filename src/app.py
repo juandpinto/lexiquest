@@ -1,6 +1,7 @@
 import gradio as gr
 import os
 import uuid
+import traceback
 from typing import Optional, List, Dict, Any
 
 # Langchain and LLM imports
@@ -81,7 +82,7 @@ def get_llm(api_key_from_ui: Optional[str] = None):
     print("Attempting to use Ollama LLM (gemma3) as fallback.")
     try:
         # Ensure gemma3 is a valid model name for your ChatOllama setup
-        llm = ChatOllama(model="llama3.1", temperature=0.8) # Using a common naming for Ollama models
+        llm = ChatOllama(model="gemma3", temperature=0.8) # Using a common naming for Ollama models
         return llm, "Ollama (gemma)"
     except Exception as e:
         error_message = f"Error initializing Ollama: {e}. No LLM could be initialized. Please check API keys or ensure Ollama server is running."
@@ -122,7 +123,7 @@ def chat_interface_function(message_text: str, api_key_ui: str): # api_key_ui is
     current_turn_input = {"messages": [HumanMessage(content=message_text)]}
 
     # Stream the response from LangGraph
-    try:
+    """try:
         output = ""
         for chunk, metadata in LANG_GRAPH_APP.stream(
             current_turn_input,
@@ -134,10 +135,21 @@ def chat_interface_function(message_text: str, api_key_ui: str): # api_key_ui is
                 output += chunk.content
                 yield output
 
-
     except Exception as e:
         print(f"Error during LangGraph stream: {e}")
-        yield f"An error occurred: {str(e)}"
+        traceback.print_exc()
+        yield f"An error occurred: {str(e)}"""
+
+    output = ""
+    for chunk, metadata in LANG_GRAPH_APP.stream(
+            current_turn_input,
+            langgraph_config,
+            stream_mode="messages",
+    ):
+
+        if isinstance(chunk, AIMessage):
+            output += chunk.content
+            yield output
 
 
 # --- Gradio UI Setup ---

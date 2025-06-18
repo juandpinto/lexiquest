@@ -1,27 +1,21 @@
-import uuid
-import operator
-from pydantic import BaseModel, Field
-from langchain_community.chat_models import ChatOllama
-from langchain_core.output_parsers import StrOutputParser, PydanticOutputParser
+import pprint
 from langchain_core.prompts import ChatPromptTemplate
-from langgraph.graph import StateGraph, END
-from langgraph.graph.message import add_messages
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
-from typing import TypedDict, Annotated, List, Optional, Sequence, Union, Tuple, Any, Mapping
+from typing import TypedDict, List, Any, Mapping
 from abc import ABC, abstractmethod
-from operator import add
+from core.states import ChallengeState, FullState
+from core.challenges import BaseChallenge
 
 SUBTASK1_INSTRUCTION_PROMPT = """
-Subtest 1 is concerned with evaluating a students Vocabulary Awareness (VA). The test consists of presenting a student with a set of 
-3 words (e.g. dog-cat-bone) and asking them "Tell me two words that go together" and then ask for their justification. For each set students must come up 
-with 2 pairings along with their associated justifications.Students are allowed repeated attempts at any given item. 
+Subtest 1 is concerned with evaluating a students Vocabulary Awareness (VA). The test consists of presenting a student with a set of
+3 words (e.g. dog-cat-bone) and asking them "Tell me two words that go together" and then ask for their justification. For each set students must come up
+with 2 pairings along with their associated justifications.Students are allowed repeated attempts at any given item.
 
 You are allowed to provide a practice round in which coaching the student is allowed. If a students response to "why?"
-is not good/primary/dominant reason ask if they can think of a better reason to place two items together. 
+is not good/primary/dominant reason ask if they can think of a better reason to place two items together.
 You are not allowed to define words for students and they ask you must state that you cannot provide that information and record their response as "don't know".
 
 To begin the challenge say "Okay. Let's begin!" show the first set of items (e.g. x-y-z) and read the three words aloud.
-record the true answer justification if given otherwise note the students response. 
+record the true answer justification if given otherwise note the students response.
 
 You will generate a number of these word triplets and justification pairs with two possible pairings and justifications based on the following age guide:
 
@@ -34,7 +28,7 @@ dog-cat-bone: (dog, cat), because they are both animals
               (dog, bone), because dogs like bones
 
 light-sun-feather: (light, sun), because the sun produces light
-                   (light, feather), because a feather is light / not heavy 
+                   (light, feather), because a feather is light / not heavy
 """
 SUBTASK1_INSTRUCTION_CONSTRAINTS = """
 - Each challenge presents 1 word triplet (x-y-z) and asks the student to choose 2 that go together and explain why.
@@ -44,7 +38,7 @@ SUBTASK1_INSTRUCTION_CONSTRAINTS = """
 - If justification is weak, prompt the student again.
 - The student may say "don't know" — this should be recorded, but not simulated.
 - Justifications should rely on semantic meaning of words not just their relationship to the story.
-- Try to avoid ambiguity, at least one pair of within any triplet should explicitly not match. 
+- Try to avoid ambiguity, at least one pair of within any triplet should explicitly not match.
 """
 
 
@@ -74,32 +68,6 @@ class NarrativeConstraint(TypedDict):
     personalization_info: Mapping[str, str]  # A dictionary with personalization information
 
 
-class Pairing(BaseModel):
-    words: Tuple[str, str] = Field(description="Tuple of words that are associated")
-    justification: str = Field(default="String representing the justification for the pairing")
-
-
-class ChallengeTriplet(BaseModel):
-    triplet: Tuple[str, str, str] = Field(description="Word triplets for association")
-    pairings: List[Pairing] = Field(description="List of pairings with their associated definitions")
-
-
-class Challenges(BaseModel):
-    challenges: List[ChallengeTriplet] = Field(
-        description="A list of challenge triplets, their pairings and justifications")
-
-
-class ChallengeAgentState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], add_messages]  # History of messages
-    current_narrative_segment: str  # The current segment of the story as decided by the manager
-    narrative_beat_info: Mapping[str, str]  # dict[str, str] representing key information for the narrative beat
-    challenge_type: str  # Which TILLS subtest to create a challenge for
-    modality: str  # What kind of modality to use
-    story_history: str  # The history of the story so far
-    challenge_history: Annotated[
-        Sequence[Challenges], add]  # A sequence of Challenges objects containing challenge information
-
-
 class ChallengeAgent(BaseAgent):
     def __init__(self, model):
         super().__init__(name="Challenge Agent")
@@ -107,12 +75,12 @@ class ChallengeAgent(BaseAgent):
         Current Main Character: {main_characters}. These are the main characters in the current narrative beat.
         Theme: {theme}. This is the theme of the overall story.
         Setting: {setting}. This is the current setting of the narrative beat (e.g. forest, space station).
-        Tone: {tone}. The emotional tone of the current narrative beat (e.g. playful, tense, mysterious) 
+        Tone: {tone}. The emotional tone of the current narrative beat (e.g. playful, tense, mysterious)
         Plot Function: {plot}. How the challenge affects the narrative plot (e.g. advancing the mystery, unlocking information)
         """
 
         self.model = model
-        self.challenge_prompt_template = """" 
+        self.challenge_prompt_template = """"
         You are the Challenge Master in an interactive story game.
 
         The current narrative situation:
@@ -158,84 +126,98 @@ class ChallengeAgent(BaseAgent):
         }}
         """
 
-        self.state: ChallengeAgentState = {
-            "messages": [],
-            "current_narrative_segment": "",
-            "narrative_beat_info": {},
-            "challenge_type": "",
-            "modality": "",
-            "story_history": "",
-            "challenge_history": []
-        }
+        self.output_schema2 = """
+        Use the following **JSON schema** for output (do not include anything other than the JSON):
+
+        ```json
+        {challenge_schema}
+        ```
+        """
+
+        self.state: ChallengeState = ChallengeState(
+            messages=[],
+            current_narrative_segment="",
+            narrative_beat_info={},
+            challenge_type="",
+            modality="",
+            story_history="",
+            challenge_history=[]
+        )
         self.narrative_constraints = NarrativeConstraint
         self.modality_constraint = {}
         self.current_challenge = 0
 
-    def __call__(self, inputs: Mapping[str, Any]) -> Mapping[str, Any]:
-        """
-        Interface function for aligning with LangGraphs Agent definitions. Should also be modified to either return a
-        function call (currently) or return a compiled graph similar how create_react_agent() does.
-        :param inputs: Current state passed to the challenge agent (TypedDict, dict)
-        :return: A dictionary containing the current challenge, updated agent messages, and updated story history
-        """
-        print("--- Running Challenge Agent ---")
-        if not inputs.get("current_narrative_segment"):
-            # Should not happen if flow is correct
-            return {"current_challenge": "Error: No narrative to base challenge on."}
-
-        # Generate challenge output and select the first question from the challenge to present
-        # Todo Figure out whether to return the entire challenge or only return the first question in a challenge
+    def __call__(self, inputs: FullState) -> FullState:
+        print("[challenge_agent] Input state:", inputs)
+        if len(inputs.full_history) == 0:
+            # Store the error in the state instead of returning a dict
+            inputs.full_history.append("Error: No narrative to base challenge on.")
+            print("[challenge_agent] Output state:", inputs)
+            print("[challenge_agent] Output type:", type(inputs))
+            print("\n--- Exiting Challenge Agent ---")
+            return inputs
         challenge_output = self.generate_challenge(inputs)
-        current_challenge = challenge_output.challenges[self.current_challenge]
-        self.current_challenge += 1
-
+        current_challenge = challenge_output[self.current_challenge]
         print("--- Completed Challenge Query ---")
         print(current_challenge)
-
         print("\n--- Completed Challenge Query ---")
-        self.store_challenge(inputs, challenge_output, current_challenge)  # Store generated challenge
+        self.store_challenge(inputs, challenge_output, current_challenge)
+        print("[challenge_agent] Output state:", inputs)
+        print("[challenge_agent] Output type:", type(inputs))
         print("\n--- Exiting Challenge Agent ---")
+        return inputs
 
-        return {
-            "current_challenge": current_challenge,
-            "current_bot_message": inputs["current_bot_message"] + f"\n\nChallenge: {challenge_output}",
-            "story_history": inputs["story_history"] + [f"Challenge Master: {challenge_output}"]
-        }
-
-    def generate_challenge(self, inputs: Mapping[str, Any]) -> Challenges:
+    def generate_challenge(self, inputs: FullState) -> list:
         """
         Generates a Challenges object which will contain question information such as the question, the answer, and the
         justification for the answer if necessary.
-        :param inputs: Current state passed to the challenge agent (TypedDict, dict)
-        :return:
+        :param inputs: Current state passed to the challenge agent (FullState object)
+        :return list: A challenge plan with a list of challenges
         """
         context_input = {
-            "current_narrative_context": inputs["current_narrative_segment"],
-            "story_history": inputs["story_history"],
+            "current_narrative_context": inputs.narrative.story[-1].content,
+            "story_history": str(inputs.full_history[-1]).replace('{', '{{').replace('}', '}}').replace("'", '"'),
             "subtask_instruction": SUBTASK1_INSTRUCTION_PROMPT,
             "subtask_constraints": SUBTASK1_INSTRUCTION_CONSTRAINTS,
             "challenge_type": "Vocabulary Awareness",
             "modality": "Text/Audio"
         }
+        # Todo setup better logic for switching between challenge types
+        current_challenge_schema = BaseChallenge.get_example_for('triplet')
+        structured_output_parser = BaseChallenge.get_class_by_type('triplet')
+        current_challenge_schema_str = str(pprint.pformat(current_challenge_schema))\
+            .replace('{', '{{').replace('}', '}}').replace("'", '"')
+        self.output_schema2 = self.output_schema2.format(challenge_schema=current_challenge_schema_str).strip()
 
         # Format the current challenge
-        challenge_prompt = self.challenge_prompt_template.format(**context_input) + "\n" + self.output_schema
-        prompt = ChatPromptTemplate.from_template(challenge_prompt)
+        challenge_prompt = self.challenge_prompt_template.format(**context_input).strip() + "\n" + self.output_schema2
+
+        prompt = ChatPromptTemplate([
+            ("system", challenge_prompt),
+            # ("system", "Previous challenges:\n{chat_history}"),
+            ("human", "{query}")
+        ])
 
         # Force the model to provide structure output for ease of use and consistency
-        model = self.model.with_structured_output(Challenges)
+        model = self.model.with_structured_output(structured_output_parser.example().class_type())
 
         # Todo not sure if this is the best initial query-system_prompt combination
-        query = "Generate a challenge based on the current current narrative context and subtask"
+        query = "Generate a challenge based on the current current narrative context and subtask." \
+                "Do not create duplicate challenges if previous challenges are given."
 
         print("--- Starting Challenge Query ---")
         print(f'--- Input Prompt: {prompt} ---')
 
         # Create query chain to get output from the model
         chain = prompt | model
-        challenge_output = chain.invoke({"query": query})
+        challenge_history = []
+        for i in range(5):
+            challenge = chain.invoke({"query": query})
+            challenge_history.append(challenge)
 
-        return challenge_output  # Assuming nothing went wrong should return a Challenges object
+            query = query + "\n" + str(challenge_history).replace('{', '{{').replace('}', '}}').replace("'", '"')
+
+        return challenge_history  # Assuming nothing went wrong should return a list of BaseChallenge object
 
     def validate_challenge(self):
         """
@@ -245,8 +227,8 @@ class ChallengeAgent(BaseAgent):
         """
         pass
 
-    def store_challenge(self, inputs: Mapping[str, Any], challenge_output: Challenges,
-                        current_challenge: ChallengeTriplet):
+    def store_challenge(self, inputs: FullState, challenge_output: list,
+                        current_challenge: BaseChallenge):
         """
         Method to store challenges outputs and update the ChallengeAgentState
         :param inputs: Current state passed to the challenge agent (TypedDict, dict)
@@ -256,18 +238,18 @@ class ChallengeAgent(BaseAgent):
         """
         updated_state = {
             "messages": [],
-            "current_narrative_context": inputs["current_narrative_segment"],
+            "current_narrative_segment": inputs.narrative.story,
             "narrative_beat_info": {"characters": [], "theme": "Fun", "tone": "happy",
                                     "plot": "Starting the adventure"},
-            "story_history": inputs["story_history"] + [f"Challenge Master: {challenge_output}"],
+            "story_history": inputs.full_history + [f"Challenge Master: {current_challenge}"],
             "challenge_type": "Vocabulary Awareness",
             "modality": "Text/Audio",
-            "challenge_history": [current_challenge]
+            "challenge_history": challenge_output
         }
 
         # update the ChallengeAgentState with the new information
         for k, v in updated_state.items():
-            self.update_state(k, v)
+            setattr(self.state, k, v)
 
         # Todo add logic to store challenges in a challenge database or in memory
 

@@ -53,11 +53,8 @@ class NarrativeAgent(BaseAgent):
 
         # Add agent metadata before appending
         if isinstance(story_segment, AIMessage):
-            story_segment.metadata = dict(story_segment.metadata or {})
+            story_segment.metadata = dict(story_segment.response_metadata or {})
             story_segment.metadata["agent"] = self.name
-
-        # Ensure the story is age-appropriate
-        # story_segment = self.ensure_age_appropriate(story_segment)
 
         # Update the narrative history in the global state
         state.narrative.story.append(story_segment)
@@ -74,7 +71,12 @@ class NarrativeAgent(BaseAgent):
         """
         print(f"\n--- Generating Story Segment ---")
 
-        messages = [SystemMessage(content=self.prompt)] + current_narrative
+        converted = []
+        for narrative in current_narrative:
+            converted.append(SystemMessage(content=narrative.content)
+                             if isinstance(narrative, BaseMessage) else narrative)
+
+        messages = [SystemMessage(content=self.prompt)] + converted
         story_segment = self.model.invoke(messages)
         print(f"Generated story segment: {story_segment.content}")
 
