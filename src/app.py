@@ -120,25 +120,25 @@ def chat_interface_function(message_text: str, api_key_ui: str): # api_key_ui is
         return
 
     langgraph_config = {"configurable": {"thread_id": CURRENT_THREAD_ID}}
-    current_turn_input = {"messages": [HumanMessage(content=message_text)]}
+    current_turn_input = {"full_history": [HumanMessage(content=message_text)]}
 
-    # Stream the response from LangGraph
-    """try:
-        output = ""
-        for chunk, metadata in LANG_GRAPH_APP.stream(
-            current_turn_input,
-            langgraph_config,
-            stream_mode="messages",
-        ):
+    # # Stream the response from LangGraph
+    # try:
+    #     output = ""
+    #     for chunk, metadata in LANG_GRAPH_APP.stream(
+    #         current_turn_input,
+    #         langgraph_config,
+    #         stream_mode="messages",
+    #     ):
 
-            if isinstance(chunk, AIMessage):
-                output += chunk.content
-                yield output
+    #         if isinstance(chunk, AIMessage):
+    #             output += chunk.content
+    #             yield output
 
-    except Exception as e:
-        print(f"Error during LangGraph stream: {e}")
-        traceback.print_exc()
-        yield f"An error occurred: {str(e)}"""
+    # except Exception as e:
+    #     print(f"Error during LangGraph stream: {e}")
+    #     traceback.print_exc()
+    #     yield f"An error occurred: {str(e)}
 
     output = ""
     for chunk, metadata in LANG_GRAPH_APP.stream(
@@ -196,56 +196,60 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
     )
 
 
-    def handle_start_story(current_history: List[Dict[str, Any]], api_key: str):
+    def handle_start_story(current_display_history: List[Dict[str, Any]], api_key: str):
         _app, llm_info_status = ensure_graph_initialized(api_key)
 
-        # Ensure current_history is a list of dictionaries
-        if not isinstance(current_history, list): current_history = []
+        # Ensure current_display_history is a list of dictionaries
+        if not isinstance(current_display_history, list): current_display_history = []
 
 
-        updated_history = current_history + [{"role": "user", "content": "Let's start!"}]
+        full_display_history = current_display_history + [{"role": "user", "content": "Let's start!"}]
         # Add a placeholder for the assistant's response
-        updated_history = updated_history + [{"role": "assistant", "content": ""}]
+        full_display_history = full_display_history + [{"role": "assistant", "content": ""}]
 
 
         if not _app: # If graph initialization failed
-            updated_history[-1]["content"] = f"Failed to start: {llm_info_status.replace('LLM: ', '').replace('Error: ', '')}"
-            yield updated_history, llm_info_status
+            full_display_history[-1]["content"] = f"Failed to start: {llm_info_status.replace('LLM: ', '').replace('Error: ', '')}"
+            yield full_display_history, llm_info_status
             return
 
-        yield updated_history, llm_info_status # Initial yield with placeholder and status
+        yield full_display_history, llm_info_status # Initial yield with placeholder and status
 
         full_response = ""
         for ai_response_chunk in chat_interface_function("Let's start!", api_key):
             full_response = ai_response_chunk # chat_interface_function now yields full AIMessage content
-            updated_history[-1]["content"] = full_response
-            yield updated_history, llm_info_status
+            full_display_history[-1]["content"] = full_response
+            yield full_display_history, llm_info_status
 
-    def handle_submit(message_text: str, current_history: List[Dict[str, Any]], api_key: str):
-        if not message_text.strip(): # Avoid sending empty messages
-            yield current_history, CURRENT_LLM_INFO # No change if message is empty
+    def handle_submit(message_text: str, current_display_history: List[Dict[str, Any]], api_key: str):
+        # Avoid sending empty messages
+        if not message_text.strip():
+            yield current_display_history, CURRENT_LLM_INFO # No change if message is empty
             return
 
         _app, llm_info_status = ensure_graph_initialized(api_key)
-        if not isinstance(current_history, list): current_history = []
+        if not isinstance(current_display_history, list): current_display_history = []
 
 
-        updated_history = current_history + [{"role": "user", "content": message_text}]
-        updated_history = updated_history + [{"role": "assistant", "content": ""}] # Placeholder for AI response
+        full_display_history = current_display_history + [{"role": "user", "content": message_text}]
+        full_display_history = full_display_history + [{"role": "assistant", "content": ""}] # Placeholder for AI response
 
 
-        if not _app: # If graph initialization failed
-            updated_history[-1]["content"] = f"Failed to process: {llm_info_status.replace('LLM: ', '').replace('Error: ', '')}"
-            yield updated_history, llm_info_status
+        # If graph initialization failed
+        if not _app:
+            full_display_history[-1]["content"] = f"Failed to process: {llm_info_status.replace('LLM: ', '').replace('Error: ', '')}"
+            yield full_display_history, llm_info_status
             return
 
-        yield updated_history, llm_info_status # Initial yield
+        # Initial (loading) yield
+        full_display_history[-1]["content"] = "..."
+        yield full_display_history, llm_info_status
 
         full_response = ""
         for ai_response_chunk in chat_interface_function(message_text, api_key):
             full_response = ai_response_chunk
-            updated_history[-1]["content"] = full_response
-            yield updated_history, llm_info_status
+            full_display_history[-1]["content"] = full_response
+            yield full_display_history, llm_info_status
 
     start_button.click(
         fn=handle_start_story,

@@ -1,5 +1,4 @@
 from langchain_core.messages import SystemMessage, AIMessage
-from langgraph.graph.message import add_messages
 from typing import Any, Dict
 from agents.utils import BaseAgent
 from core.states import FullState
@@ -52,7 +51,8 @@ class ManagerAgent(BaseAgent):
 
         # Store the decision in the state for the router node to use
         state.last_agent = self.name
-        state.full_history.append(f"Manager decision: {decision}")
+        # Wrap the manager decision as an AIMessage for full_history
+        state.full_history.append(AIMessage(content=f"Manager decision: {decision}", metadata={"agent": self.name}))
 
         # Attach the decision to the state for the router node
         state.manager_decision = decision

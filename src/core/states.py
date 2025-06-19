@@ -1,6 +1,9 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Sequence, Mapping
 from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
+from typing_extensions import Annotated
+from langchain_core.messages import AnyMessage
 
 
 class NarrativeState(BaseModel):
@@ -21,7 +24,7 @@ class FullState(BaseModel):
     narrative: NarrativeState = Field(default_factory=NarrativeState)
     challenge: ChallengeState = Field(default_factory=ChallengeState)
     # Optionally, include the full conversation and any other metadata
-    full_history: List[str] = Field(default_factory=list)
+    full_history: Annotated[List[AnyMessage], Field(default_factory=list), add_messages]
     # Example: the last agent to produce output
     last_agent: Optional[str] = None
     # Store the manager's routing decision for the router node

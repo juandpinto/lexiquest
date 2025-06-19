@@ -4,6 +4,7 @@ from typing import TypedDict, List, Any, Mapping
 from abc import ABC, abstractmethod
 from core.states import ChallengeState, FullState
 from core.challenges import BaseChallenge
+from langchain_core.messages import AIMessage
 
 SUBTASK1_INSTRUCTION_PROMPT = """
 Subtest 1 is concerned with evaluating a students Vocabulary Awareness (VA). The test consists of presenting a student with a set of
@@ -151,7 +152,7 @@ class ChallengeAgent(BaseAgent):
         print("[challenge_agent] Input state:", inputs)
         if len(inputs.full_history) == 0:
             # Store the error in the state instead of returning a dict
-            inputs.full_history.append("Error: No narrative to base challenge on.")
+            inputs.full_history.append(AIMessage(content="Error: No narrative to base challenge on."))
             print("[challenge_agent] Output state:", inputs)
             print("[challenge_agent] Output type:", type(inputs))
             print("\n--- Exiting Challenge Agent ---")
@@ -176,7 +177,7 @@ class ChallengeAgent(BaseAgent):
         """
         context_input = {
             "current_narrative_context": inputs.narrative.story[-1].content,
-            "story_history": str(inputs.full_history[-1]).replace('{', '{{').replace('}', '}}').replace("'", '"'),
+            "story_history": str(inputs.full_history[-1].content).replace('{', '{{').replace('}', '}}').replace("'", '"'),
             "subtask_instruction": SUBTASK1_INSTRUCTION_PROMPT,
             "subtask_constraints": SUBTASK1_INSTRUCTION_CONSTRAINTS,
             "challenge_type": "Vocabulary Awareness",

@@ -1,7 +1,7 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
-from agents import NarrativeAgent, ChallengeAgent, ManagerAgent, alignment_agent
+from agents import NarrativeAgent, ChallengeAgent, ManagerAgent, AlignmentAgent
 
 from core.config import survey_results
 from core.states import FullState
@@ -12,6 +12,7 @@ def initialize_graph(llm):
     manager_agent = ManagerAgent(model=llm)
     narrative_agent = NarrativeAgent(model=llm, survey_results=survey_results)
     challenge_agent = ChallengeAgent(model=llm)
+    alignment_agent = AlignmentAgent()
 
     # Router node: sets a routing key in the state for conditional routing
     def manager_router(state: FullState) -> FullState:
@@ -28,14 +29,15 @@ def initialize_graph(llm):
     # Initialize memory
     memory = MemorySaver()
 
-    # Define the multi-agent supervisor graph
-    supervisor = (
+    # Define the multi-agent workflow graph
+    workflow = (
         StateGraph(FullState)
         .add_node('alignment_agent', alignment_agent)
         .add_node('manager', manager_agent)
         .add_node('narrative_agent', narrative_agent)
         .add_node('challenge_agent', challenge_agent)
         .add_node('manager_router', manager_router)
+
         .add_edge(START, 'alignment_agent')
         .add_conditional_edges(
             'alignment_agent',
@@ -57,7 +59,8 @@ def initialize_graph(llm):
         )
         .add_edge('narrative_agent', END)
         .add_edge('challenge_agent', END)
+
         .compile(checkpointer=memory)
     )
 
-    return supervisor
+    return workflow

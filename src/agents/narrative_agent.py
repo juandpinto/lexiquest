@@ -60,7 +60,7 @@ class NarrativeAgent(BaseAgent):
         state.narrative.story.append(story_segment)
 
         # Optionally, update full_history or last_agent if needed
-        state.full_history.append(story_segment.content)
+        state.full_history.append(story_segment)  # Now append the message object, not .content
         state.last_agent = self.name
 
         return state
