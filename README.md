@@ -1,3 +1,5 @@
+# LexiQuest: Personalized, Multimodal SLD Screening via Agentic Narrative AI
+
 ---
 title: LexiQuest
 emoji: 🚀
@@ -7,63 +9,101 @@ sdk: gradio
 app_file: src/app.py
 ---
 
-# LexiQuest: Personalized, Multimodal SLD Screening via Agentic Narrative AI
-
 ## Overview
 
-This project implements a multi-agent system designed to engage children through interactive storytelling. The system consists of a manager agent that coordinates tasks and a narrative agent that generates personalized stories based on user input and interests.
+LexiQuest is a multi-agent, interactive storytelling system designed to screen for Specific Learning Disorders (SLD) in children through engaging, personalized narratives and challenges. The system leverages advanced language models and a modular agent architecture to deliver a safe, adaptive, and fun experience.
 
 ## Project Structure
 
 ```
-python-multi-agent-app
-├── src
-│   ├── agents
+prototype/
+├── src/
+│   ├── agents/
 │   │   ├── __init__.py
 │   │   ├── manager_agent.py
-│   │   └── narrative_agent.py
-│   ├── core
+│   │   ├── narrative_agent.py
+│   │   ├── challenge_agent.py
+│   │   ├── alignment_agent.py
+│   │   └── utils.py
+│   ├── core/
 │   │   ├── __init__.py
 │   │   ├── config.py
-│   │   └── graph.py
-│   ├── tools
+│   │   ├── graph.py
+│   │   ├── states.py
+│   │   └── challenges.py
+│   ├── tools/
 │   │   ├── __init__.py
 │   │   └── handoff_tools.py
 │   └── app.py
+├── data/
+│   └── costs-2025.json
 ├── requirements.txt
-└── README.md
+├── README.md
+├── flow.md
+├── test.py
+├── test_langsmith.py
+└── test_validator.py
 ```
+
+## Key Components
+
+### Agents
+- **ManagerAgent**: Oversees the workflow, delegates tasks to other agents, and ensures child-appropriate content. Decides which agent should act next based on the conversation state.
+- **NarrativeAgent**: Generates engaging, age-appropriate, and personalized story segments, interacting with the user to co-create the narrative.
+- **ChallengeAgent**: Presents educational challenges (e.g., vocabulary triplets) embedded in the story, adapting to the child's age and interests.
+- **AlignmentAgent**: Validates user input for appropriateness using Guardrails AI, ensuring a safe and respectful environment.
+
+### Core
+- **config.py**: Handles configuration, API keys, and stores sample survey results for personalization.
+- **graph.py**: Defines the multi-agent workflow using LangGraph, including routing and state management.
+- **states.py**: Contains Pydantic models for global and agent-specific state.
+- **challenges.py**: Defines challenge types and logic for educational tasks.
+
+### Tools
+- **handoff_tools.py**: Utilities for agent task handoff and routing within the workflow.
+
+### Data
+- **data/costs-2025.json**: Example data file (not directly used in core logic).
+
+### Tests
+- **test.py, test_langsmith.py, test_validator.py**: Scripts for testing various components and integrations.
 
 ## Installation
 
-To set up the project, clone the repository and install the required dependencies:
+Clone the repository and install dependencies:
 
 ```bash
 git clone <repository-url>
-cd python-multi-agent-app
+cd prototype
 pip install -r requirements.txt
 ```
 
 ## Usage
 
-Run the application using the following command:
+Run the application:
 
 ```bash
 python src/app.py
 ```
 
-Once the application is running, you can interact with the storytelling system through the Gradio interface.
-
-## Agents
-
-### Manager Agent
-
-The `ManagerAgent` class is responsible for overseeing the narrative agent. It assigns tasks, ensures that the stories generated are appropriate for children, and manages the flow of the conversation.
-
-### Narrative Agent
-
-The `NarrativeAgent` class generates engaging and age-appropriate stories based on user input. It takes into account the child's interests and preferences to create a personalized storytelling experience.
+Interact with the system via the Gradio web interface. You can use OpenAI or Google API keys, or fallback to Ollama if no key is provided.
 
 ## Configuration
 
-Configuration settings, including API keys and environment variables, are managed in the `src/core/config.py` file. Ensure that you set the necessary keys before running the application.
+- API keys and environment variables are managed in `src/core/config.py` and via `.env` files.
+- Personalization is based on sample survey results, which can be customized in `config.py`.
+
+## Dependencies
+
+- [Gradio](https://gradio.app/)
+- [LangChain](https://python.langchain.com/)
+- [LangGraph](https://langchain-ai.github.io/langgraph/)
+- [Guardrails AI](https://www.guardrailsai.com/)
+- [Pydantic](https://docs.pydantic.dev/)
+- [python-dotenv](https://pypi.org/project/python-dotenv/)
+
+See `requirements.txt` for the full list.
+
+## License
+
+This project is for research and prototyping purposes only.
