@@ -31,9 +31,6 @@ prototype/
 │   │   ├── graph.py
 │   │   ├── states.py
 │   │   └── challenges.py
-│   ├── tools/
-│   │   ├── __init__.py
-│   │   └── handoff_tools.py
 │   └── app.py
 ├── data/
 │   └── costs-2025.json
@@ -58,9 +55,6 @@ prototype/
 - **graph.py**: Defines the multi-agent workflow using LangGraph, including routing and state management.
 - **states.py**: Contains Pydantic models for global and agent-specific state.
 - **challenges.py**: Defines challenge types and logic for educational tasks.
-
-### Tools
-- **handoff_tools.py**: Utilities for agent task handoff and routing within the workflow.
 
 ### Data
 - **data/costs-2025.json**: Example data file (not directly used in core logic).
