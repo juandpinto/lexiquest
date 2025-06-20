@@ -115,30 +115,14 @@ def ensure_graph_initialized(api_key_ui: Optional[str]):
 def chat_interface_function(message_text: str, api_key_ui: str): # api_key_ui is for ensure_graph_initialized
     global LANG_GRAPH_APP, CURRENT_THREAD_ID, CURRENT_LLM_INFO
 
+    # Ensure the graph is initialized with the current API key
     if LANG_GRAPH_APP is None:
         yield f"Chat system initialization failed. Details: {CURRENT_LLM_INFO.replace('LLM: ', '')}"
         return
 
+    # Ensure the thread ID is set
     langgraph_config = {"configurable": {"thread_id": CURRENT_THREAD_ID}}
     current_turn_input = {"full_history": [HumanMessage(content=message_text)]}
-
-    # # Stream the response from LangGraph
-    # try:
-    #     output = ""
-    #     for chunk, metadata in LANG_GRAPH_APP.stream(
-    #         current_turn_input,
-    #         langgraph_config,
-    #         stream_mode="messages",
-    #     ):
-
-    #         if isinstance(chunk, AIMessage):
-    #             output += chunk.content
-    #             yield output
-
-    # except Exception as e:
-    #     print(f"Error during LangGraph stream: {e}")
-    #     traceback.print_exc()
-    #     yield f"An error occurred: {str(e)}
 
     output = ""
     for chunk, metadata in LANG_GRAPH_APP.stream(
@@ -146,10 +130,11 @@ def chat_interface_function(message_text: str, api_key_ui: str): # api_key_ui is
             langgraph_config,
             stream_mode="messages",
     ):
-
-        if isinstance(chunk, AIMessage):
+        if metadata['langgraph_node'] == 'narrative_agent':
             output += chunk.content
             yield output
+        else:
+            yield f"*{metadata['langgraph_node']} is processing...*"
 
 
 # --- Gradio UI Setup ---
