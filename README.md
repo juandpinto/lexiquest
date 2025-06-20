@@ -1,5 +1,3 @@
-# LexiQuest: Personalized, Multimodal SLD Screening via Agentic Narrative AI
-
 ---
 title: LexiQuest
 emoji: 🚀
@@ -8,6 +6,8 @@ colorTo: indigo
 sdk: gradio
 app_file: src/app.py
 ---
+
+# LexiQuest: Personalized, Multimodal SLD Screening via Agentic Narrative AI
 
 ## Overview
 

@@ -28,6 +28,8 @@ class AlignmentAgent(BaseAgent):
                 result = self.validator(user_message)
                 print(f"Input: {user_message!r} | Valid: True")
                 state.input_status = "valid_input"
+                # Also append to story if valid
+                state.narrative.story.append(state.full_history[-1])
             except Exception as e:
                 print(f"Input: {user_message!r} | Valid: False | Exception: {e}")
                 state.full_history.append(AIMessage(content="Sorry, your input was not appropriate. Please try again."))

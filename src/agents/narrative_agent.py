@@ -22,20 +22,12 @@ Begin by setting the scene, organically asking the child questions to guide the 
 """
 
 
-class NarrativeAgentState(TypedDict):
-    narrative_history: Annotated[Sequence[BaseMessage], add_messages]  # History of the narrative
-    # Also store survey results/preferences already used here?
-
-
 class NarrativeAgent(BaseAgent):
     def __init__(self, model, survey_results):
         super().__init__(name='Narrative Agent')
 
         self.model = model
         self.prompt = NARRATIVE_PROMPT_TEMPLATE.format(**survey_results)
-        # self.state: NarrativeAgentState = {
-        #     'narrative_history': []
-        # }
 
     def __call__(self, state: FullState) -> FullState:
         """
@@ -48,6 +40,10 @@ class NarrativeAgent(BaseAgent):
         # Get current narrative history from the global state
         current_narrative = state.narrative.story
 
+        print()
+        print(f'current_narrative: {current_narrative!r}')
+        print()
+
         # Generate the story segment
         story_segment = self.generate_story_segment(current_narrative)
 
@@ -56,11 +52,11 @@ class NarrativeAgent(BaseAgent):
             story_segment.metadata = dict(story_segment.response_metadata or {})
             story_segment.metadata["agent"] = self.name
 
-        # Update the narrative history in the global state
+        # Only append the story_segment here; HumanMessages will be handled elsewhere
         state.narrative.story.append(story_segment)
 
-        # Optionally, update full_history or last_agent if needed
-        state.full_history.append(story_segment)  # Now append the message object, not .content
+        # Update full_history and last_agent as before
+        state.full_history.append(story_segment)
         state.last_agent = self.name
 
         return state
@@ -71,14 +67,22 @@ class NarrativeAgent(BaseAgent):
         """
         print(f"\n--- Generating Story Segment ---")
 
-        converted = []
-        for narrative in current_narrative:
-            converted.append(SystemMessage(content=narrative.content)
-                             if isinstance(narrative, BaseMessage) else narrative)
+        # converted = []
+        # for narrative in current_narrative:
+        #     converted.append(SystemMessage(content=narrative.content)
+        #                      if isinstance(narrative, BaseMessage) else narrative)
 
-        messages = [SystemMessage(content=self.prompt)] + converted
+
+        messages = [SystemMessage(content=self.prompt)] + current_narrative
+
+        print()
+        print(f"messages: {messages!r}")
+        print()
+
         story_segment = self.model.invoke(messages)
+        print()
         print(f"Generated story segment: {story_segment.content}")
+        print()
 
         return story_segment
 
