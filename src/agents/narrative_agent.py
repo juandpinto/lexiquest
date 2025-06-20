@@ -1,8 +1,4 @@
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
-from langgraph.graph.message import add_messages
-from typing import TypedDict, Annotated, Sequence, Any, Mapping
-from core import survey_results
+from langchain_core.messages import  AIMessage, SystemMessage
 from core.states import FullState
 from agents.utils import BaseAgent
 
@@ -67,22 +63,13 @@ class NarrativeAgent(BaseAgent):
         """
         print(f"\n--- Generating Story Segment ---")
 
-        # converted = []
-        # for narrative in current_narrative:
-        #     converted.append(SystemMessage(content=narrative.content)
-        #                      if isinstance(narrative, BaseMessage) else narrative)
-
-
+        # Append system prompt
         messages = [SystemMessage(content=self.prompt)] + current_narrative
 
-        print()
-        print(f"messages: {messages!r}")
-        print()
+        print(f"\nmessages: {messages!r}", end='\n\n')
 
         story_segment = self.model.invoke(messages)
-        print()
-        print(f"Generated story segment: {story_segment.content}")
-        print()
+        print(f"\nGenerated story segment: {story_segment.content}", end='\n\n')
 
         return story_segment
 
