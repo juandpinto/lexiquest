@@ -8,21 +8,8 @@ from langchain_core.messages import AIMessage
 
 SUBTASK1_INSTRUCTION_PROMPT = """
 Subtest 1 is concerned with evaluating a students Vocabulary Awareness (VA). The test consists of presenting a student with a set of
-3 words (e.g. dog-cat-bone) and asking them "Tell me two words that go together" and then ask for their justification. For each set students must come up
-with 2 pairings along with their associated justifications.Students are allowed repeated attempts at any given item.
-
-You are allowed to provide a practice round in which coaching the student is allowed. If a students response to "why?"
-is not good/primary/dominant reason ask if they can think of a better reason to place two items together.
-You are not allowed to define words for students and they ask you must state that you cannot provide that information and record their response as "don't know".
-
-To begin the challenge say "Okay. Let's begin!" show the first set of items (e.g. x-y-z) and read the three words aloud.
-record the true answer justification if given otherwise note the students response.
-
-You will generate a number of these word triplets and justification pairs with two possible pairings and justifications based on the following age guide:
-
-ages 6-11: 4 triplets
-ages 12-13: 6 triplets
-ages 14+: 8 triplet
+3 words (e.g. dog-cat-bone) and asking them "Tell me two words that go together" and then ask for their justification. For each set, students must come up
+with 2 pairings along with their associated justifications. Students are allowed repeated attempts at any given item.
 
 Examples:
 dog-cat-bone: (dog, cat), because they are both animals
@@ -32,14 +19,12 @@ light-sun-feather: (light, sun), because the sun produces light
                    (light, feather), because a feather is light / not heavy
 """
 SUBTASK1_INSTRUCTION_CONSTRAINTS = """
-- Each challenge presents 1 word triplet (x-y-z) and asks the student to choose 2 that go together and explain why.
+- Each challenge presents a word triplet (x-y-z) and asks the student to choose words that go together and explain why.
 - For each triplet, generate exactly 2 correct pairings with associated justifications.
-- You may add a short, friendly story-based wrapper for each challenge to help it feel like part of the narrative.
+- Justifications should be based on the actual meaning of words and nothing else
+- Triplets should be chosen based on their contextual relationship with the narrative
 - Do not define words.
-- If justification is weak, prompt the student again.
-- The student may say "don't know" — this should be recorded, but not simulated.
-- Justifications should rely on semantic meaning of words not just their relationship to the story.
-- Try to avoid ambiguity, at least one pair of within any triplet should explicitly not match.
+- Try to avoid ambiguity, at least one pair within any triplet should explicitly not match.
 """
 
 
@@ -108,29 +93,6 @@ class ChallengeAgent(BaseAgent):
         Use the following **JSON schema** for output (do not include anything other than the JSON):
 
         ```json
-        {{
-          "challenges": [
-            {{
-              "triplet": ["dog", "cat", "bone"],
-              "pairings": [
-                {{
-                  "words": ["dog", "cat"],
-                  "justification": "because they are both animals"
-                }},
-                {{
-                  "words": ["dog", "bone"],
-                  "justification": "because dogs like bones"
-                }}
-              ]
-            }}
-          ]
-        }}
-        """
-
-        self.output_schema2 = """
-        Use the following **JSON schema** for output (do not include anything other than the JSON):
-
-        ```json
         {challenge_schema}
         ```
         """
@@ -161,7 +123,8 @@ class ChallengeAgent(BaseAgent):
         current_challenge = challenge_output[self.current_challenge]
         print("--- Completed Challenge Query ---")
         print(current_challenge)
-        print("\n--- Completed Challenge Query ---")
+        print()
+
         self.store_challenge(inputs, challenge_output, current_challenge)
         print("[challenge_agent] Output state:", inputs)
         print("[challenge_agent] Output type:", type(inputs))
@@ -181,17 +144,17 @@ class ChallengeAgent(BaseAgent):
             "subtask_instruction": SUBTASK1_INSTRUCTION_PROMPT,
             "subtask_constraints": SUBTASK1_INSTRUCTION_CONSTRAINTS,
             "challenge_type": "Vocabulary Awareness",
-            "modality": "Text/Audio"
+            "modality": "Text/Audio",
         }
         # Todo setup better logic for switching between challenge types
         current_challenge_schema = BaseChallenge.get_example_for('triplet')
         structured_output_parser = BaseChallenge.get_class_by_type('triplet')
         current_challenge_schema_str = str(pprint.pformat(current_challenge_schema))\
             .replace('{', '{{').replace('}', '}}').replace("'", '"')
-        self.output_schema2 = self.output_schema2.format(challenge_schema=current_challenge_schema_str).strip()
+        self.output_schema = self.output_schema.format(challenge_schema=current_challenge_schema_str).strip()
 
         # Format the current challenge
-        challenge_prompt = self.challenge_prompt_template.format(**context_input).strip() + "\n" + self.output_schema2
+        challenge_prompt = self.challenge_prompt_template.format(**context_input).strip() + "\n" + self.output_schema
 
         prompt = ChatPromptTemplate([
             ("system", challenge_prompt),
@@ -216,7 +179,11 @@ class ChallengeAgent(BaseAgent):
             challenge = chain.invoke({"query": query})
             challenge_history.append(challenge)
 
-            query = query + "\n" + str(challenge_history).replace('{', '{{').replace('}', '}}').replace("'", '"')
+            prev_challenges = "\n".join([
+                str(x).replace('{', '{{').replace('}', '}}').replace("'", '"')
+                for x in challenge_history
+            ])
+            query = query + "\n\nPrevious Challenges:" + prev_challenges
 
         return challenge_history  # Assuming nothing went wrong should return a list of BaseChallenge object
 
@@ -245,12 +212,13 @@ class ChallengeAgent(BaseAgent):
             "story_history": inputs.full_history + [f"Challenge Master: {current_challenge}"],
             "challenge_type": "Vocabulary Awareness",
             "modality": "Text/Audio",
-            "challenge_history": challenge_output
+            "challenge_history":  self.state.challenge_history + challenge_output
         }
 
         # update the ChallengeAgentState with the new information
         for k, v in updated_state.items():
             setattr(self.state, k, v)
+        setattr(inputs, "challenge", self.state)
 
         # Todo add logic to store challenges in a challenge database or in memory
 
