@@ -2,8 +2,11 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Sequence, Mapping
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
-from typing_extensions import Annotated
+from typing_extensions import Annotated, TypedDict
 from langchain_core.messages import AnyMessage
+from enum import Enum
+from core.challenges import Pairing
+from core.assessments import ResponseEvaluation
 
 
 class NarrativeState(BaseModel):
@@ -19,10 +22,20 @@ class ChallengeState(BaseModel):
     story_history: str = Field(default_factory=str, description="The history of the story so far")
     challenge_history: list = Field(default_factory=list, description="The history of generated challenges") # A sequence of Challenges objects containing challenge information
 
+# Todo: do we need to save the position of the established start (basal) and stop (ceiling) points?
+class AssessmentState(TypedDict):
+    """
+    State for the current subtask.
+    """
+    basal: bool                                              # Whether the starting point of task should be moved backwards or not
+    ceiling: bool                                            # Whether the stopping point been reached or not
+    evaluated_pairings: List[ResponseEvaluation]             # List of evaluation results for each subtask 1 item 
+
 class FullState(BaseModel):
     # The full global state, namespaced per agent
     narrative: NarrativeState = Field(default_factory=NarrativeState)
     challenge: ChallengeState = Field(default_factory=ChallengeState)
+    assessment: AssessmentState = Field(default_factory=AssessmentState)
     # Optionally, include the full conversation and any other metadata
     full_history: Annotated[List[AnyMessage], Field(default_factory=list), add_messages]
     # Example: the last agent to produce output
@@ -33,3 +46,6 @@ class FullState(BaseModel):
     input_status: Optional[str] = None
     # For manager_router output
     next_agent: Optional[str] = None
+    # For assessment_agent input
+    student_response: Optional[str] = None
+    expected_response: Optional[str] = None
