@@ -99,11 +99,11 @@ class ChallengeAgent(BaseAgent):
 
         self.state: ChallengeState = ChallengeState(
             messages=[],
-            current_narrative_segment="",
+            current_narrative_segment=[],
             narrative_beat_info={},
             challenge_type="",
             modality="",
-            story_history="",
+            story_history=[],
             challenge_history=[]
         )
         self.narrative_constraints = NarrativeConstraint
@@ -183,7 +183,7 @@ class ChallengeAgent(BaseAgent):
                 str(x).replace('{', '{{').replace('}', '}}').replace("'", '"')
                 for x in challenge_history
             ])
-            query = query + "\n\nPrevious Challenges:" + prev_challenges
+            query = query + "\n\nPrevious Challenges:" if i == 0 else "\n\n" + prev_challenges
 
         return challenge_history  # Assuming nothing went wrong should return a list of BaseChallenge object
 
@@ -209,7 +209,7 @@ class ChallengeAgent(BaseAgent):
             "current_narrative_segment": inputs.narrative.story,
             "narrative_beat_info": {"characters": [], "theme": "Fun", "tone": "happy",
                                     "plot": "Starting the adventure"},
-            "story_history": inputs.full_history + [f"Challenge Master: {current_challenge}"],
+            "story_history": inputs.full_history + [AIMessage(content=f"Challenge Master: {current_challenge}")],
             "challenge_type": "Vocabulary Awareness",
             "modality": "Text/Audio",
             "challenge_history":  self.state.challenge_history + challenge_output

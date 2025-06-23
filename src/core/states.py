@@ -12,11 +12,11 @@ class NarrativeState(BaseModel):
 
 class ChallengeState(BaseModel):
     messages: Sequence[BaseMessage] = Field(default_factory=list, description="History of messages")
-    current_narrative_segment: str = Field(default_factory=str, description="The current segment of the story as decided by the manager")
-    narrative_beat_info: Mapping[str, str] = Field(default_factory=dict, description="Key information for the narrative beat")
+    current_narrative_segment: List[AnyMessage] = Field(default_factory=list, description="The current segment of the story as decided by the manager")
+    narrative_beat_info: Mapping[str, Any] = Field(default_factory=dict, description="Key information for the narrative beat")
     challenge_type: str = Field(default_factory=str, description="Which TILLS subtest to create a challenge for")
     modality: str = Field(default_factory=str, description="What kind of modality to use")
-    story_history: str = Field(default_factory=str, description="The history of the story so far")
+    story_history: List[AnyMessage] = Field(default_factory=list, description="The history of the story so far")
     challenge_history: list = Field(default_factory=list, description="The history of generated challenges") # A sequence of Challenges objects containing challenge information
 
 class FullState(BaseModel):
