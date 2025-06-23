@@ -24,7 +24,7 @@ def generate_thread_id(prefix: str = "", length: int = 8) -> str:
 # Global state variables
 LANG_GRAPH_APP: Optional[Any] = None
 CURRENT_LLM_INFO: str = "LLM: Not yet determined. Press 'Let's start!' or send a message."
-CURRENT_THREAD_ID: str = generate_thread_id(prefix="test")
+CURRENT_THREAD_ID: str = generate_thread_id(prefix="chat")
 PREVIOUS_API_KEY_USED: Optional[str] = None
 
 
@@ -115,30 +115,14 @@ def ensure_graph_initialized(api_key_ui: Optional[str]):
 def chat_interface_function(message_text: str, api_key_ui: str): # api_key_ui is for ensure_graph_initialized
     global LANG_GRAPH_APP, CURRENT_THREAD_ID, CURRENT_LLM_INFO
 
+    # Ensure the graph is initialized with the current API key
     if LANG_GRAPH_APP is None:
         yield f"Chat system initialization failed. Details: {CURRENT_LLM_INFO.replace('LLM: ', '')}"
         return
 
+    # Ensure the thread ID is set
     langgraph_config = {"configurable": {"thread_id": CURRENT_THREAD_ID}}
     current_turn_input = {"full_history": [HumanMessage(content=message_text)]}
-
-    # # Stream the response from LangGraph
-    # try:
-    #     output = ""
-    #     for chunk, metadata in LANG_GRAPH_APP.stream(
-    #         current_turn_input,
-    #         langgraph_config,
-    #         stream_mode="messages",
-    #     ):
-
-    #         if isinstance(chunk, AIMessage):
-    #             output += chunk.content
-    #             yield output
-
-    # except Exception as e:
-    #     print(f"Error during LangGraph stream: {e}")
-    #     traceback.print_exc()
-    #     yield f"An error occurred: {str(e)}
 
     output = ""
     for chunk, metadata in LANG_GRAPH_APP.stream(
@@ -146,16 +130,17 @@ def chat_interface_function(message_text: str, api_key_ui: str): # api_key_ui is
             langgraph_config,
             stream_mode="messages",
     ):
-
-        if isinstance(chunk, AIMessage):
+        if metadata['langgraph_node'] == 'narrative_agent':
             output += chunk.content
             yield output
+        else:
+            yield f"*{metadata['langgraph_node']} is processing...*"
 
 
 # --- Gradio UI Setup ---
 with gr.Blocks(theme=gr.themes.Soft()) as demo:
-    gr.Markdown("## Interactive Storyteller Chat")
-    gr.Markdown("Enter your API Key below. Can use OpenAI or Google API keys.")
+    gr.Markdown("## LexiQuest")
+    gr.Markdown("Enter your API Key below. You can use OpenAI or Google API keys.")
 
     with gr.Row():
         api_key_textbox = gr.Textbox(
@@ -172,16 +157,19 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         height=400,
         type="messages"
     )
-    msg_textbox = gr.Textbox(
-        label="Your reply:",
-        placeholder="Type what you want to say or do...",
-        lines=2,
-        scale=4
-    )
-
+    # --- UI elements with dynamic visibility ---
     with gr.Row():
-        start_button = gr.Button("Let's start!", variant="primary")
-        clear_button = gr.Button("Clear Chat & Reset Thread")
+        msg_textbox = gr.Textbox(
+            label="Your reply:",
+            placeholder="Type what you want to say or do...",
+            lines=1,  # Change to single line for Enter-to-submit
+            scale=6,
+            visible=False  # Initially hidden
+        )
+        with gr.Column(scale=2):
+            submit_button = gr.Button("Submit", variant="primary", visible=False)  # Initially hidden
+            clear_button = gr.Button("Start over", visible=False)  # Initially hidden
+    start_button = gr.Button("Let's start!", variant="primary", visible=True)  # Initially visible
 
     # Event handler for API key changes
     def handle_api_key_change_effect(api_key: str):
@@ -195,91 +183,82 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         show_progress="hidden"
     )
 
-
+    # Function to handle starting the story
     def handle_start_story(current_display_history: List[Dict[str, Any]], api_key: str):
         _app, llm_info_status = ensure_graph_initialized(api_key)
-
-        # Ensure current_display_history is a list of dictionaries
         if not isinstance(current_display_history, list): current_display_history = []
-
-
-        full_display_history = current_display_history + [{"role": "user", "content": "Let's start!"}]
-        # Add a placeholder for the assistant's response
-        full_display_history = full_display_history + [{"role": "assistant", "content": ""}]
-
-
-        if not _app: # If graph initialization failed
+        full_display_history = current_display_history + [{"role": "assistant", "content": ""}]
+        if not _app:
             full_display_history[-1]["content"] = f"Failed to start: {llm_info_status.replace('LLM: ', '').replace('Error: ', '')}"
-            yield full_display_history, llm_info_status
+            # Show start button, hide others
+            yield full_display_history, llm_info_status, gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
             return
-
-        yield full_display_history, llm_info_status # Initial yield with placeholder and status
-
+        # Show chat controls, hide start button
+        yield full_display_history, llm_info_status, gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True)
         full_response = ""
         for ai_response_chunk in chat_interface_function("Let's start!", api_key):
-            full_response = ai_response_chunk # chat_interface_function now yields full AIMessage content
+            full_response = ai_response_chunk
             full_display_history[-1]["content"] = full_response
-            yield full_display_history, llm_info_status
+            yield full_display_history, llm_info_status, gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True)
 
+    # Function to handle message submission
     def handle_submit(message_text: str, current_display_history: List[Dict[str, Any]], api_key: str):
-        # Avoid sending empty messages
         if not message_text.strip():
-            yield current_display_history, CURRENT_LLM_INFO # No change if message is empty
+            yield current_display_history, CURRENT_LLM_INFO, gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True)
             return
-
         _app, llm_info_status = ensure_graph_initialized(api_key)
         if not isinstance(current_display_history, list): current_display_history = []
-
-
         full_display_history = current_display_history + [{"role": "user", "content": message_text}]
-        full_display_history = full_display_history + [{"role": "assistant", "content": ""}] # Placeholder for AI response
-
-
-        # If graph initialization failed
+        full_display_history = full_display_history + [{"role": "assistant", "content": ""}]
         if not _app:
             full_display_history[-1]["content"] = f"Failed to process: {llm_info_status.replace('LLM: ', '').replace('Error: ', '')}"
-            yield full_display_history, llm_info_status
+            yield full_display_history, llm_info_status, gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True)
             return
-
-        # Initial (loading) yield
         full_display_history[-1]["content"] = "..."
-        yield full_display_history, llm_info_status
-
+        yield full_display_history, llm_info_status, gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True)
         full_response = ""
         for ai_response_chunk in chat_interface_function(message_text, api_key):
             full_response = ai_response_chunk
             full_display_history[-1]["content"] = full_response
-            yield full_display_history, llm_info_status
+            yield full_display_history, llm_info_status, gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True)
 
-    start_button.click(
-        fn=handle_start_story,
-        inputs=[chatbot, api_key_textbox],
-        outputs=[chatbot, llm_status_display]
-    )
-
-    msg_textbox.submit(
-        fn=handle_submit,
-        inputs=[msg_textbox, chatbot, api_key_textbox],
-        outputs=[chatbot, llm_status_display]
-    )
-    # Clear textbox after submit
-    msg_textbox.submit(lambda: gr.update(value=""), inputs=[], outputs=[msg_textbox])
-
-
+    # Function to clear chat and reset thread
     def clear_chat_and_reset_thread():
         global LANG_GRAPH_APP, CURRENT_THREAD_ID, CURRENT_LLM_INFO, PREVIOUS_API_KEY_USED
         LANG_GRAPH_APP = None
-        PREVIOUS_API_KEY_USED = None # Reset to force re-initialization with current/new key
-        CURRENT_THREAD_ID = generate_thread_id(prefix="chat") # Generate new thread ID
+        PREVIOUS_API_KEY_USED = None
+        CURRENT_THREAD_ID = generate_thread_id(prefix="chat")
         new_llm_status = f"Chat cleared. New Thread: {CURRENT_THREAD_ID}. LLM will re-initialize on next message."
-        CURRENT_LLM_INFO = new_llm_status # Update global status
+        CURRENT_LLM_INFO = new_llm_status
         print(f"Chat cleared. New thread: {CURRENT_THREAD_ID}. Graph will re-initialize on next interaction.")
-        return [], new_llm_status # Clear chatbot history and update status display
+        # Hide chat controls, show start button
+        return [], new_llm_status, gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
 
+    # --- Button and event wiring ---
+    start_button.click(
+        fn=handle_start_story,
+        inputs=[chatbot, api_key_textbox],
+        outputs=[chatbot, llm_status_display, start_button, msg_textbox, clear_button, submit_button],
+        show_progress=True
+    )
+    submit_button.click(
+        fn=handle_submit,
+        inputs=[msg_textbox, chatbot, api_key_textbox],
+        outputs=[chatbot, llm_status_display, start_button, msg_textbox, clear_button, submit_button],
+        show_progress=True
+    )
+    msg_textbox.submit(
+        fn=handle_submit,
+        inputs=[msg_textbox, chatbot, api_key_textbox],
+        outputs=[chatbot, llm_status_display, start_button, msg_textbox, clear_button, submit_button],
+        show_progress=True
+    )
+    msg_textbox.submit(lambda: gr.update(value=""), inputs=[], outputs=[msg_textbox])
     clear_button.click(
         fn=clear_chat_and_reset_thread,
         inputs=[],
-        outputs=[chatbot, llm_status_display]
+        outputs=[chatbot, llm_status_display, start_button, msg_textbox, clear_button, submit_button],
+        show_progress=True
     )
 
 

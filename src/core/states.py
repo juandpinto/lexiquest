@@ -8,7 +8,7 @@ from langchain_core.messages import AnyMessage
 
 class NarrativeState(BaseModel):
     # The story so far (excluding assessments and responses to assessments)
-    story: List[BaseMessage] = Field(default_factory=list)
+    story: List[AnyMessage] = Field(default_factory=list)
 
 class ChallengeState(BaseModel):
     messages: Sequence[BaseMessage] = Field(default_factory=list, description="History of messages")
