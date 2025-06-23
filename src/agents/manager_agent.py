@@ -2,7 +2,7 @@ from langchain_core.messages import SystemMessage, AIMessage
 from typing import Any, Dict
 from agents.utils import BaseAgent
 from core.states import FullState
-
+from pprint import pprint
 
 # Manager agent system prompt
 MANAGER_PROMPT = """
@@ -15,7 +15,7 @@ Assign work to one agent at a time, do not call agents in parallel.
 
 When the narrative agent provides you with a story, make sure it does not include any inappropriate elements for a child. Then return the story to the user.
 
-The user will initiate the conversation with "Let's start!", after which you should refer to the narrative agent for the first part of the story.
+The user will initiate the conversation with "--- START NOW ---", after which you should refer to the narrative agent for the first part of the story.
 
 Your response MUST be a JSON object with two keys:
 - "next_agent": either "narrative_agent" or "challenge_agent"
@@ -42,7 +42,9 @@ class ManagerAgent(BaseAgent):
 
         # Generate the next task and agent
         decision = self.generate_task(state)
-        print(f"Manager decision: {decision}")
+        print("Manager decision:")
+        pprint(decision)
+        print()
 
         # Add agent metadata before appending
         if isinstance(decision, AIMessage):
