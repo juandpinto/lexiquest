@@ -34,7 +34,7 @@ class NarrativeAgent(BaseAgent):
         print("\n--- Running Narrative Agent ---")
 
         # Get current narrative history from the global state
-        current_narrative = state.narrative.story
+        current_narrative = state.full_history  # state.narrative.story
 
         print()
         print(f'current_narrative: {current_narrative!r}')

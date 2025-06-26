@@ -58,7 +58,7 @@ def initialize_graph(llm):
             }
         )
         .add_edge('narrative_agent', END)
-        .add_edge('challenge_agent', END)
+        .add_edge('challenge_agent', 'manager')
 
         .compile(checkpointer=memory)
     )

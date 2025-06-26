@@ -219,6 +219,8 @@ class ChallengeAgent(BaseAgent):
         for k, v in updated_state.items():
             setattr(self.state, k, v)
         setattr(inputs, "challenge", self.state)
+        setattr(inputs, "full_history",
+                inputs.full_history + [AIMessage(content=f"Challenge Master: {challenge_output}")])
 
         # Todo add logic to store challenges in a challenge database or in memory
 
