@@ -19,8 +19,8 @@ class Config:
 # Sample survey results
 survey_results = {
     'age': 7,
-    'interests': ['space', 'dinosaurs'],
-    'wants_to_be': 'astronaut',
+    'interests': ['geology', 'dinosaurs'],
+    'wants_to_be': 'palaeontologist',
     'favorite_color': 'blue',
     'favorite_food': 'pizza',
     'favorite_animal': 'dolphin',

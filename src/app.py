@@ -196,7 +196,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         # Show chat controls, hide start button
         yield full_display_history, llm_info_status, gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True)
         full_response = ""
-        for ai_response_chunk in chat_interface_function("Let's start!", api_key):
+        for ai_response_chunk in chat_interface_function("--- START NOW ---", api_key):
             full_response = ai_response_chunk
             full_display_history[-1]["content"] = full_response
             yield full_display_history, llm_info_status, gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True)

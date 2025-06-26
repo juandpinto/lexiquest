@@ -2,6 +2,7 @@ from guardrails.hub import ProfanityFree
 from core.states import FullState
 from agents.utils import BaseAgent
 from langchain_core.messages import HumanMessage, AIMessage
+from pprint import pprint
 
 # Set up the ProfanityFree validator
 profanity_validator = ProfanityFree(on_fail="exception")
@@ -19,7 +20,8 @@ class AlignmentAgent(BaseAgent):
         print("\n--- Running Alignment Agent ---")
 
         print()
-        print(f"FullState: {state!r}")
+        print("FullState:")
+        pprint( state.model_dump())
         print()
 
         if state.full_history and isinstance(state.full_history[-1], HumanMessage):

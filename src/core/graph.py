@@ -14,6 +14,15 @@ def initialize_graph(llm):
     challenge_agent = ChallengeAgent(model=llm)
     alignment_agent = AlignmentAgent()
 
+    def survey_router(state: FullState) -> FullState:
+        if state.input_status == 'valid_input':
+            if state.narrative.finished_survey:
+                return 'manager'
+            else:
+                return 'narrative_agent'
+        else:
+            return END
+
     # Router node: sets a routing key in the state for conditional routing
     def manager_router(state: FullState) -> FullState:
         print("[manager_router] Input state:", state)
@@ -41,12 +50,13 @@ def initialize_graph(llm):
         .add_edge(START, 'alignment_agent')
         .add_conditional_edges(
             'alignment_agent',
-            # Use the value of state.input_status for routing
-            lambda state: getattr(state, 'input_status', 'valid_input'),
-            {
-                'invalid_input': END,
-                'valid_input': 'manager',
-            }
+            lambda state: END if state.input_status =='invalid_input' else 'manager' if state.narrative.finished_survey else 'narrative_agent'
+            # # Use the value of state.input_status for routing
+            # lambda state: getattr(state, 'input_status', 'valid_input'),
+            # {
+            #     'invalid_input': END,
+            #     'valid_input': 'manager',
+            # }
         )
         .add_edge('manager', 'manager_router')
         .add_conditional_edges(
