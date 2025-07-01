@@ -25,14 +25,12 @@ def initialize_graph(llm):
 
     # Router node: sets a routing key in the state for conditional routing
     def manager_router(state: FullState) -> FullState:
-        print("[manager_router] Input state:", state)
+        print("[manager_router] Input state:", state.manager_decision)
         decision = getattr(state, "manager_decision", None)
         if not decision or not isinstance(decision, dict):
             state.next_agent = "narrative_agent"
         else:
             state.next_agent = decision.get("next_agent", "narrative_agent")
-        print("[manager_router] Output state:", state)
-        print("[manager_router] Output type:", type(state))
         return state
 
     # Initialize memory

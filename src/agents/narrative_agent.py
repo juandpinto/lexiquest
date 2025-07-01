@@ -1,6 +1,7 @@
 from langchain_core.messages import  AIMessage, SystemMessage, HumanMessage
 from core.states import FullState
 from agents.utils import BaseAgent
+from core.config import survey_results as default_survey_results
 
 SURVEY_PROMPT = """
 ## Objective
@@ -123,7 +124,22 @@ class NarrativeAgent(BaseAgent):
         print("\n--- Running Narrative Agent ---")
 
         print(f"\nfinished_survey: {state.narrative.finished_survey!r}", end="\n\n")
+        # --- BYPASS SURVEY FOR TESTING ---
         if not state.narrative.finished_survey:
+            # Check for skip command in latest user message
+            if state.full_history and isinstance(state.full_history[-1], HumanMessage):
+                user_msg = state.full_history[-1].content.strip()
+                if user_msg == "SKIP SURVEY":
+                    print("[NarrativeAgent] Skipping survey and using default survey_results.")
+                    state.narrative.finished_survey = True
+                    state.narrative.survey_data = str(default_survey_results)
+                    self.prompt = self.prompt.format(survey_results=state.narrative.survey_data)
+                    # Optionally, add a system message to the story to indicate skip (for debugging)
+                    skip_msg = AIMessage(content="Survey skipped for testing. Beginning story...", metadata={"agent": self.name})
+                    state.narrative.story.append(skip_msg)
+                    state.full_history.append(skip_msg)
+                    state.last_agent = self.name
+                    return state
             # Append user message
             if isinstance(state.full_history[-1], HumanMessage):
                 state.narrative.survey_conversation.append(state.full_history[-1])
@@ -149,16 +165,17 @@ class NarrativeAgent(BaseAgent):
         else:
             # Get current narrative history from the global state
             current_narrative = state.narrative.story
+            next_triplet = state.narrative.next_triplet
 
-            print()
-            print(f"current_narrative: {current_narrative!r}")
-            print()
+            print(f"\n\ncurrent_narrative: {current_narrative!r}\n")
+            print(f"\n\nnext_triplet: {next_triplet!r}\n")
 
             # If a challenge triplet is present, incorporate it into the story
-            if getattr(state.narrative, 'next_triplet', None) is not None:
-                triplet = state.narrative.next_triplet
-                challenge_prompt = f"\n\nA challenge for the user: Present the following word triplet as a puzzle in the story, and ask the user to pick two words that go together and explain why. Triplet: {triplet}\n"
+            if next_triplet:
+                print("Incorporating challenge triplet into the story...")
+                challenge_prompt = f"\n\nA challenge for the user: Present the following word triplet as a puzzle in the story, and ask the user to pick two words that go together and explain why. Triplet: {next_triplet}\n"
                 story_segment = self.generate_story_segment(current_narrative, challenge_prompt=challenge_prompt)
+                state.narrative.next_triplet = None  # Clear the triplet after using it
             else:
                 story_segment = self.generate_story_segment(current_narrative)
             story_segment = self.add_agent_metadata(story_segment)

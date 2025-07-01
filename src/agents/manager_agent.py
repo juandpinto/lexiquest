@@ -1,4 +1,4 @@
-from langchain_core.messages import SystemMessage, AIMessage
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from typing import Any, Dict
 from agents.utils import BaseAgent
 from core.states import FullState
@@ -13,13 +13,13 @@ You are a manager managing the following agents:
 
 Assign work to one agent at a time, do not call agents in parallel.
 
-When the narrative agent provides you with a story, make sure it does not include any inappropriate elements for a child. Then return the story to the user.
-
-The user will initiate the conversation with "--- START NOW ---", after which you should refer to the narrative agent for the first part of the story.
+The user will initiate the conversation with "--- START NOW ---", after which you should refer to the narrative agent for the first part of the story. Make sure the challenge_agent is called every few turns.
 
 Your response MUST be a JSON object with two keys:
 - "next_agent": either "narrative_agent" or "challenge_agent"
 - "task": a string describing the task to assign
+
+DO NOT include any other text or formatting, ONLY return the JSON object.
 
 Example:
 {"next_agent": "narrative_agent", "task": "Continue the story"}
@@ -40,8 +40,8 @@ class ManagerAgent(BaseAgent):
         """
         print("\n--- Running Manager Agent ---")
 
-        # Refactored: handle challenge flow in a separate method
         decision = self.handle_challenge_flow(state)
+        print(f"\n\nChallenge flow decision: {decision}\n")
         if decision is None:
             # Default: use model to decide
             decision = self.generate_task(state)
@@ -69,18 +69,32 @@ class ManagerAgent(BaseAgent):
         Handles the logic for distributing challenge triplets to the narrative agent and collecting responses.
         Returns a decision dict if handling a challenge, else None.
         """
-        prev_agent = getattr(state, 'last_agent', None)
-        challenge_state = getattr(state, 'challenge', None)
-        challenge_history = getattr(challenge_state, 'challenge_history', []) if challenge_state else []
+        challenge_history = getattr(state.challenge, 'challenge_history', [])
 
-        # Used triplets and user responses tracking (now in narrative)
-        if not hasattr(state.narrative, 'used_triplets') or state.narrative.used_triplets is None:
-            state.narrative.used_triplets = []
-        if not hasattr(state.narrative, 'user_responses') or state.narrative.user_responses is None:
-            state.narrative.user_responses = []
+        # Save the student's response if active challenge
+        if state.narrative.active_challenge:
+            prev_message = state.full_history[-1]
+            if isinstance(prev_message, HumanMessage):
+                state.student_response = prev_message.content.strip()
+            else:
+                print("No valid student response found in the last message.")
+                state.student_response = None
+            state.narrative.user_responses.append({
+                "triplet": state.narrative.next_triplet,
+                "response": state.student_response
+            })
 
-        # If previous agent was challenge agent and there are triplets left
-        if prev_agent == "Challenge Agent" and challenge_history:
+            # If active challenge but no more triplets, prepare for assessment
+            if not challenge_history:
+                state.narrative.active_challenge = False
+                # Prepare expected and student responses for assessment
+                state.expected_response = [item["triplet"] for item in state.narrative.user_responses]
+                state.student_response = [item["response"] for item in state.narrative.user_responses]
+                return {"next_agent": "assessment_agent", "task": "Assess the user's responses to the challenges."}
+
+        # Continue with next challenge if available
+        if challenge_history:
+            state.narrative.active_challenge = True
             # Pop the first triplet
             next_triplet = challenge_history.pop(0)
             state.narrative.next_triplet = next_triplet
@@ -89,32 +103,7 @@ class ManagerAgent(BaseAgent):
             state.challenge.challenge_history = challenge_history
             # Assign narrative agent the task
             return {"next_agent": "narrative_agent", "task": "Incorporate the following triplet into the story as a challenge: {}".format(next_triplet)}
-        # If user just responded to a triplet, continue with next triplet if any
-        elif prev_agent == "narrative_agent" and challenge_history:
-            # Save user response if available
-            if hasattr(state, 'student_response') and hasattr(state.narrative, 'next_triplet'):
-                state.narrative.user_responses.append({
-                    "triplet": state.narrative.next_triplet,
-                    "response": state.student_response
-                })
-            # Pop next triplet
-            next_triplet = challenge_history.pop(0)
-            state.narrative.next_triplet = next_triplet
-            state.narrative.used_triplets.append(next_triplet)
-            state.challenge.challenge_history = challenge_history
-            return {"next_agent": "narrative_agent", "task": "Incorporate the following triplet into the story as a challenge: {}".format(next_triplet)}
-        # If no more triplets, send to assessment agent
-        elif prev_agent == "narrative_agent" and not challenge_history:
-            # Save last user response if available
-            if hasattr(state, 'student_response') and hasattr(state.narrative, 'next_triplet'):
-                state.narrative.user_responses.append({
-                    "triplet": state.narrative.next_triplet,
-                    "response": state.student_response
-                })
-            # Prepare expected and student responses for assessment
-            state.expected_response = [item["triplet"] for item in state.narrative.user_responses]
-            state.student_response = [item["response"] for item in state.narrative.user_responses]
-            return {"next_agent": "assessment_agent", "task": "Assess the user's responses to the challenges."}
+
         # If not handling challenge flow, return None
         return None
 
@@ -136,6 +125,7 @@ class ManagerAgent(BaseAgent):
 
         # Call the model (assume it returns a stringified JSON object)
         response = self.model.invoke([SystemMessage(content=self.prompt)] + state.full_history)
+        print(f"\n[Manager] Raw manager response:\n{response.content}\n")
 
         # Check if the response is a valid JSON object
         import json
@@ -144,6 +134,7 @@ class ManagerAgent(BaseAgent):
             decision = json.loads(content)
         except Exception:
             # Fallback: default to narrative_agent
+            print("Invalid response from model, defaulting to narrative_agent.")
             decision = {"next_agent": "narrative_agent", "task": "Continue the story"}
 
         return decision
