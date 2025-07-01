@@ -1,17 +1,17 @@
 
 from langchain_ollama import ChatOllama
 
-from utils import BaseAgent
+from .utils import BaseAgent
 from core.states import FullState, AssessmentState
 from core.assessments import ChallengePairings, ResponseEvaluation
 
- 
+
 
 
 
 SUBTASK1_DESCRIPTION = """
-Each challenge presents a triplet of words (e.g. "dog-cat-bone") and the student is asked to 
-choose 2 words that go together and justify their choice. For each triplet, the student must 
+Each challenge presents a triplet of words (e.g. "dog-cat-bone") and the student is asked to
+choose 2 words that go together and justify their choice. For each triplet, the student must
 provide 2 pairs with justifications for each.
 
 Examples:
@@ -43,7 +43,7 @@ You are responsible for evaluating student responses to Vocabulary Awareness (VA
 
 {task_description}
 
-Your task is to verify whether the student's selected word pair and their justification for each pair is valid, given the expected response. 
+Your task is to verify whether the student's selected word pair and their justification for each pair is valid, given the expected response.
 If BOTH word pair and justification are correct, score 1, else score 0. Then, compute the total score as the sum of scores for each evaluated pair. The maximum total score is 2.
 
 Example:
@@ -75,14 +75,14 @@ class AssessmentAgent(BaseAgent):
         super().__init__(name="Assessment Agent")
 
         self.model = model
-        self.item_total_scores = [] 
+        self.item_total_scores = []
         self.basal_move_backwards = False
         self.ceiling_stop_subtask = False
-       
-        self.state: AssessmentState = {            
-            "basal": False,                                              
-            "ceiling": False,                                                                             
-            "evaluated_pairings": []            
+
+        self.state: AssessmentState = {
+            "basal": False,
+            "ceiling": False,
+            "evaluated_pairings": []
         }
 
         self.prompt_template = """
@@ -97,8 +97,8 @@ class AssessmentAgent(BaseAgent):
             Input:
             {input}
         """
-        
-    
+
+
 
     def __call__(self, fullstate: FullState) -> FullState:
         """
@@ -106,11 +106,11 @@ class AssessmentAgent(BaseAgent):
         Evaluates student response to a single subtask 1 (VA) item.
 
         Args:
-            state (FullState): The current state dictionary containing student response, 
+            state (FullState): The current state dictionary containing student response,
             expected answer, scoring history, and other agent context.
 
         Returns:
-            updated_state (FullState): The updated state including evaluation results, score for the 
+            updated_state (FullState): The updated state including evaluation results, score for the
             current item, and updated flags (e.g., basal, response mode).
         """
 
@@ -131,7 +131,7 @@ class AssessmentAgent(BaseAgent):
         # ceiling rule
         if len(self.item_total_scores) >= 8:
             self.ceiling_stop_subtask = self.check_ceiling_rule()
-        
+
         self.store_assessment(evaluated_pairings)
         fullstate.assessment = self.state
 
@@ -148,7 +148,7 @@ class AssessmentAgent(BaseAgent):
 
         Returns:
             extracted_responses (ChallengePairings): List of pairings (word pair and justification)
-        
+
         """
 
         extraction_prompt_str = self.prompt_template.format(
@@ -163,15 +163,15 @@ class AssessmentAgent(BaseAgent):
         return extracted_responses
 
 
-    
+
     def evaluate_pairings(self, student_response: ChallengePairings, expected_response: ChallengePairings) -> ResponseEvaluation:
         """
         Evaluates student's response to the given subtask 1 (VA) challenge.
         Computes the score for each item in subtask 1. Score 1 for each correct word pair and reason (both must be correct), else score 0.
 
         Args:
-            student_response (ChallengePairings): List of student's selected pairings (word pair and justification) 
-            expected_response (ChallengePairings): List of expected pairings (word pair and justification) 
+            student_response (ChallengePairings): List of student's selected pairings (word pair and justification)
+            expected_response (ChallengePairings): List of expected pairings (word pair and justification)
 
         Returns:
             evaluated_responses (ResponseEvaluation): List of evaluations for each pairing
@@ -187,31 +187,31 @@ class AssessmentAgent(BaseAgent):
 
         eval_structured_llm = self.model.with_structured_output(ResponseEvaluation)
         evaluated_responses = eval_structured_llm.invoke(eval_prompt_str)
-        
+
         evaluated_responses.update_total_score()
-        self.item_total_scores.append( int(evaluated_responses.total_score) ) 
+        self.item_total_scores.append( int(evaluated_responses.total_score) )
 
         return evaluated_responses
 
-    
-    
+
+
     def check_basal_rule(self):
         """
         Determines whether the starting point of the subtask needs to be moved backwards.
         TILLS Basal Rule for subtask 1: Four consecutive scores of 2 (both parts of each item must be correct)
-    
+
         Returns:
             True if starting point needs to be moved back, otherwise False
         """
 
         return self.item_total_scores[-1] < 2
-        
 
-    
+
+
     def check_ceiling_rule(self):
         """
         Determines the stopping point of the subtask.
-        TILLS Ceiling Rule for subtask 1: Six scores of 0 within a sequence of eight consecutive items 
+        TILLS Ceiling Rule for subtask 1: Six scores of 0 within a sequence of eight consecutive items
                             (both parts of each item must be incorrect on 6 out of 8 items)
 
         Returns:
@@ -219,7 +219,7 @@ class AssessmentAgent(BaseAgent):
         """
 
         return self.item_total_scores[-8:].count(0) >= 6
-        
+
 
 
     def store_assessment(self, evaluated_pairings: ResponseEvaluation):
@@ -248,7 +248,7 @@ class AssessmentAgent(BaseAgent):
         pass
 
 
-    
+
     def determine_flags(self):
         """
         Method to determine flags like retry, scaffold, fallback, etc.

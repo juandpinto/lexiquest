@@ -26,13 +26,13 @@ class ChallengeState(BaseModel):
     challenge_history: list = Field(default_factory=list, description="The history of generated challenges") # A sequence of Challenges objects containing challenge information
 
 # Todo: do we need to save the position of the established start (basal) and stop (ceiling) points?
-class AssessmentState(TypedDict):
+class AssessmentState(BaseModel):
     """
     State for the current subtask.
     """
-    basal: bool                                              # Whether the starting point of task should be moved backwards or not
-    ceiling: bool                                            # Whether the stopping point been reached or not
-    evaluated_pairings: List[ResponseEvaluation]             # List of evaluation results for each subtask 1 item 
+    basal: bool = False  # Whether the starting point of task should be moved backwards or not
+    ceiling: bool = False  # Whether the stopping point been reached or not
+    evaluated_pairings: List[ResponseEvaluation] = Field(default_factory=list)  # List of evaluation results for each subtask 1 item
 
 class FullState(BaseModel):
     # The full global state, namespaced per agent
