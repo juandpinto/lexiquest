@@ -25,7 +25,7 @@ You are a friendly AI tasked with gathering some information about a child's age
      - "What do you want to be when you grow up?"
      - "Is there something you'd like to learn or do in the future?"
      - "What's a fun thing you'd like to try when you're older?"
-   - **Wrap-Up:** The entire conversation should last no more than 10 turns maximum. Your last message should include a positive note and *not* any questions. *MAKE SURE* that the last phrase IN YOUR FINAL MESSAGE (and only in your final message AT THE END OF THE ENTIRE SURVEY *when you've collected enough data*) is (including the line breaks) `\\n\\nOk, now we will begin our story ...<END>` (e.g., "That's so amazing! I bet you'll be an awesome astronaut!\\n\\nOk, now we will begin our story ...<END>").
+   - **Wrap-Up:** The entire conversation should last no more than 10 turns maximum. Your last message should include a positive note and *not* any questions. *MAKE SURE* that the last phrase IN YOUR FINAL MESSAGE (and only in your final MESSAGE AT THE END OF THE ENTIRE SURVEY *when you've collected enough data*) is (including the line breaks) `\\n\\nOk, now we will begin our story ...<END>` (e.g., "That's so amazing! I bet you'll be an awesome astronaut!\\n\\nOk, now we will begin our story ...<END>").
 
 3. **Adaptability:**
    - Adjust questions based on the child's responses. If they mention a specific interest (e.g., "I like building things"), you may wan to ask follow-ups (e.g., "What kind of things?"), but also at times ask an entirely different question to learn about the child's different interests and their favorite things.
@@ -154,8 +154,13 @@ class NarrativeAgent(BaseAgent):
             print(f"current_narrative: {current_narrative!r}")
             print()
 
-            # Generate the story segment
-            story_segment = self.generate_story_segment(current_narrative)
+            # If a challenge triplet is present, incorporate it into the story
+            if getattr(state.narrative, 'next_triplet', None) is not None:
+                triplet = state.narrative.next_triplet
+                challenge_prompt = f"\n\nA challenge for the user: Present the following word triplet as a puzzle in the story, and ask the user to pick two words that go together and explain why. Triplet: {triplet}\n"
+                story_segment = self.generate_story_segment(current_narrative, challenge_prompt=challenge_prompt)
+            else:
+                story_segment = self.generate_story_segment(current_narrative)
             story_segment = self.add_agent_metadata(story_segment)
 
             # Append AI turn
@@ -180,14 +185,18 @@ class NarrativeAgent(BaseAgent):
         return next_question
 
 
-    def generate_story_segment(self, current_narrative):
+    def generate_story_segment(self, current_narrative, challenge_prompt=None):
         """
-        Generate a story segment based on the current narrative.
+        Generate a story segment based on the current narrative and (optionally) a challenge prompt.
         """
         print(f"\n--- Generating Story Segment ---")
 
         # Append system prompt
-        messages = [SystemMessage(content=self.prompt)] + current_narrative
+        if challenge_prompt:
+            prompt = self.prompt + challenge_prompt
+        else:
+            prompt = self.prompt
+        messages = [SystemMessage(content=prompt)] + current_narrative
 
         print(f"\nmessages: {messages!r}", end="\n\n")
 

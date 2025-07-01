@@ -15,6 +15,10 @@ class NarrativeState(BaseModel):
     survey_conversation: List[AnyMessage] = Field(default_factory=list)
     survey_data: str = Field(default_factory=str, description="Survey data about the child")
     finished_survey: bool = False
+    # For challenge/narrative/assessment agent coordination
+    next_triplet: Optional[Any] = None  # The current triplet to be used by the narrative agent
+    used_triplets: Optional[list] = None  # List of all triplets that have been used
+    user_responses: Optional[list] = None  # List of user responses to each triplet
 
 class ChallengeState(BaseModel):
     messages: Sequence[BaseMessage] = Field(default_factory=list, description="History of messages")
