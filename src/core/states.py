@@ -6,7 +6,6 @@ from typing_extensions import Annotated, TypedDict
 from langchain_core.messages import AnyMessage
 from enum import Enum
 from core.challenges import Pairing
-from core.assessments import ResponseEvaluation
 
 
 class NarrativeState(BaseModel):
@@ -23,13 +22,11 @@ class ChallengeState(BaseModel):
     challenge_history: list = Field(default_factory=list, description="The history of generated challenges") # A sequence of Challenges objects containing challenge information
 
 # Todo: do we need to save the position of the established start (basal) and stop (ceiling) points?
-class AssessmentState(TypedDict):
-    """
-    State for the current subtask.
-    """
-    basal: bool                                              # Whether the starting point of task should be moved backwards or not
-    ceiling: bool                                            # Whether the stopping point been reached or not
-    evaluated_pairings: List[ResponseEvaluation]             # List of evaluation results for each subtask 1 item 
+# Todo: generalize to all subtasks
+class AssessmentState(BaseModel):
+    basal: bool = Field(default=False, description="Whether the starting point of the task should be moved backwards or not")
+    ceiling: bool = Field(default=False, description="Whether the stopping point has been reached or not")
+    assessment_history: list = Field(default_factory=list, description="The history of evaluated student answers")
 
 class FullState(BaseModel):
     # The full global state, namespaced per agent
@@ -48,4 +45,3 @@ class FullState(BaseModel):
     next_agent: Optional[str] = None
     # For assessment_agent input
     student_response: Optional[str] = None
-    expected_response: Optional[str] = None

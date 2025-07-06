@@ -2,70 +2,11 @@
 from langchain_ollama import ChatOllama
 
 from utils import BaseAgent
+from prompts import ASSESSMENT_PROMPTS
 from core.states import FullState, AssessmentState
-from core.assessments import ChallengePairings, ResponseEvaluation
+from core.challenges import BaseChallenge, Pairing, ChallengeTriplet
+from core.assessments import BaseAssessmentSubtask, BaseAssessmentExtractSchema, BaseAssessmentEvalSchema
 
- 
-
-
-
-SUBTASK1_DESCRIPTION = """
-Each challenge presents a triplet of words (e.g. "dog-cat-bone") and the student is asked to 
-choose 2 words that go together and justify their choice. For each triplet, the student must 
-provide 2 pairs with justifications for each.
-
-Examples:
-dog-cat-bone: (dog, cat), because they are both animals
-              (dog, bone), because dogs like bones
-
-light-sun-feather: (light, sun), because the sun produces light
-                   (light, feather), because a feather is light / not heavy
-"""
-
-
-
-SUBTASK1_EXTRACTION_PROMPT = """
-You are given student responses to Vocabulary Awareness (VA) challenges.
-
-Your task is to extract the pairs and their justifications from the given student response.
-
-Example:
-- Student Response: "I think its dog and cat because they are animals and dog and bone because dogs like bones."
-- Output:  (dog, cat): "they are animals"
-           (dog, bone): "dogs like bones"
-
-"""
-
-
-
-SUBTASK1_EVALUATION_PROMPT = """
-You are responsible for evaluating student responses to Vocabulary Awareness (VA) challenges.
-
-{task_description}
-
-Your task is to verify whether the student's selected word pair and their justification for each pair is valid, given the expected response. 
-If BOTH word pair and justification are correct, score 1, else score 0. Then, compute the total score as the sum of scores for each evaluated pair. The maximum total score is 2.
-
-Example:
-- Student Response:
-    (light, sun): light comes from sun
-    (light, feather): feathers are light
-
-- Expected Response:
-light-sun-feather: (light, sun): because sun gives light / both are bright
-                   (light, feather): because feather is light / not heavy
-
-- Output:
-    (light, sun): True
-    "light comes from sun": True
-    Score: 1
-
-    (feather, light): True
-    "feathers are light": True
-    Score: 1
-
-    Total Score = 1 + 1 = 2
-"""
 
 
 
@@ -82,7 +23,7 @@ class AssessmentAgent(BaseAgent):
         self.state: AssessmentState = {            
             "basal": False,                                              
             "ceiling": False,                                                                             
-            "evaluated_pairings": []            
+            "assessment_history": []          
         }
 
         self.prompt_template = """
@@ -100,145 +41,183 @@ class AssessmentAgent(BaseAgent):
         
     
 
-    def __call__(self, fullstate: FullState) -> FullState:
+    def __call__(self, challenge_index: int, fullstate: FullState) -> FullState:
         """
         Main callable interface for the Assessment Agent.
-        Evaluates student response to a single subtask 1 (VA) item.
+        Evaluates student response to a TILLS subtask challenge.
 
         Args:
-            state (FullState): The current state dictionary containing student response, 
-            expected answer, scoring history, and other agent context.
+            challenge_index (int): Index of the challene being evaluated.
+            state (FullState): The current state dictionary containing student response, expected answer, scoring history, 
+                                and other agent context.
 
         Returns:
             updated_state (FullState): The updated state including evaluation results, score for the 
             current item, and updated flags (e.g., basal, response mode).
         """
 
+        subtask_key = fullstate.challenge.challenge_type # e.g Vocabulary Awareness
+        subtask_handler = self.get_subtask(subtask_key)
+        
+        raw_student_response = fullstate.student_response
+        challange_item = fullstate.challenge.challenge_history[challenge_index]
+
         print("--- Running Assessment Agent ---")
 
-
-        student_response = fullstate.student_response
-        expected_response = fullstate.expected_response
-
         # todo: handle exception case if these don't exist
-        extracted_pairings = self.extract_pairings(student_response)
-        evaluated_pairings = self.evaluate_pairings(extracted_pairings, expected_response)
+        extracted_student_answer = self.extract_student_answers(subtask_handler, raw_student_response)
+        evaluated_student_answer = self.evaluate_student_answers(subtask_handler, extracted_student_answer, challange_item) 
 
-        # basal rule
-        if len(self.item_total_scores) < 4:
-            self.basal_move_backwards = self.check_basal_rule()
-
-        # ceiling rule
-        if len(self.item_total_scores) >= 8:
-            self.ceiling_stop_subtask = self.check_ceiling_rule()
+        self.basal_move_backwards = self.check_basal_rule(subtask_handler)
+        self.ceiling_stop_subtask = self.check_ceiling_rule(subtask_handler)
         
-        self.store_assessment(evaluated_pairings)
+        self.store_assessment(evaluated_student_answer)
         fullstate.assessment = self.state
 
         return fullstate
+    
 
 
 
-    def extract_pairings(self, normalized_student_response: str) -> ChallengePairings:
+    def get_subtask(self, subtask_key: str) -> BaseAssessmentSubtask:
         """
-        Extracts the word pair and justification pairings from the student's response.
+        Retrives a handler for the current TILLS subtask.
 
         Args:
-            normalized_student_response (str): Speech-to-text transcription of the student's response to subtask 1 (VA)
+            subtask_key (str): Unique identifier of the subtask
 
         Returns:
-            extracted_responses (ChallengePairings): List of pairings (word pair and justification)
+            BaseAssessmentSubtask: An initialized handler for the subtask
+        """
+
+        subtask_class = BaseAssessmentSubtask.get_cls_by_key(subtask_key)
+        return subtask_class()
+
+
+    
+
+    def extract_student_answers(self, subtask_handler: BaseAssessmentSubtask, raw_student_response: str) -> BaseAssessmentExtractSchema:
+        """
+        Extracts the subtask answers from the student's raw response.
+
+        Args:
+            subtask_handler (BaseAssessmentSubtask): The handler for the current subtask.
+            raw_student_response (str): Transcription of the student's raw response to the given challenge.
+
+        Returns:
+            extracted_student_answers (BaseAssessmentExtractSchema): Student's answers to the current challenge
         
         """
+
+        formatted_input = subtask_handler.format_extraction_input(raw_student_response)
 
         extraction_prompt_str = self.prompt_template.format(
-            subtask_description = SUBTASK1_DESCRIPTION,
-            subtask_instructions = SUBTASK1_EXTRACTION_PROMPT,
-            input = normalized_student_response
+            subtask_description = ASSESSMENT_PROMPTS[subtask_handler.type_key]["description"],
+            subtask_instructions = ASSESSMENT_PROMPTS[subtask_handler.type_key]["extraction"],
+            input = formatted_input
         )
 
-        extraction_structured_llm = self.model.with_structured_output(ChallengePairings)
-        extracted_responses = extraction_structured_llm.invoke(extraction_prompt_str)
+        extraction_structured_llm = self.model.with_structured_output(subtask_handler.extraction_schema)
+        extracted_student_answer = extraction_structured_llm.invoke(extraction_prompt_str)
 
-        return extracted_responses
+        return extracted_student_answer
 
 
-    
-    def evaluate_pairings(self, student_response: ChallengePairings, expected_response: ChallengePairings) -> ResponseEvaluation:
+
+    def evaluate_student_answers(self, subtask_handler: BaseAssessmentSubtask, extracted_student_answers: BaseAssessmentExtractSchema, challange_item: BaseChallenge) -> BaseAssessmentEvalSchema:
         """
-        Evaluates student's response to the given subtask 1 (VA) challenge.
-        Computes the score for each item in subtask 1. Score 1 for each correct word pair and reason (both must be correct), else score 0.
+        Evaluates student's answers to the given subtask challenge.
 
         Args:
-            student_response (ChallengePairings): List of student's selected pairings (word pair and justification) 
-            expected_response (ChallengePairings): List of expected pairings (word pair and justification) 
+            subtask_handler (BaseAssessmentSubtask): The handler for the current subtask.
+            extracted_student_answers (BaseAssessmentExtractSchema): Student's answers to the current challenge
+            challenge_item (BaseChallenge): The ground-truth challenge data for the current subtask item
 
         Returns:
-            evaluated_responses (ResponseEvaluation): List of evaluations for each pairing
+            evaluated_student_answers (BaseAssessmentEvalSchema): List of evaluations for each pairing
         """
 
-        response_block = f"Student Response: {student_response}\n\nExpected Response: {expected_response}"
+        formatted_input = subtask_handler.format_evaluation_input(extracted_student_answers, challange_item)
 
         eval_prompt_str = self.prompt_template.format(
-            subtask_description = SUBTASK1_DESCRIPTION,
-            subtask_instructions = SUBTASK1_EVALUATION_PROMPT,
-            input = response_block
+            subtask_description = ASSESSMENT_PROMPTS[subtask_handler.type_key]["description"],
+            subtask_instructions = ASSESSMENT_PROMPTS[subtask_handler.type_key]["evaluation"],
+            input = formatted_input
         )
 
-        eval_structured_llm = self.model.with_structured_output(ResponseEvaluation)
-        evaluated_responses = eval_structured_llm.invoke(eval_prompt_str)
+        eval_structured_llm = self.model.with_structured_output(subtask_handler.evaluation_schema)
+        evaluated_student_answers = eval_structured_llm.invoke(eval_prompt_str)
         
-        evaluated_responses.update_total_score()
-        self.item_total_scores.append( int(evaluated_responses.total_score) ) 
+        eval_ans_total_score = subtask_handler.update_score(evaluated_student_answers)
+        self.item_total_scores.append(eval_ans_total_score) 
 
-        return evaluated_responses
+        return evaluated_student_answers
 
     
-    
-    def check_basal_rule(self):
+
+    def check_basal_rule(self, subtask_handler):
         """
-        Determines whether the starting point of the subtask needs to be moved backwards.
-        TILLS Basal Rule for subtask 1: Four consecutive scores of 2 (both parts of each item must be correct)
+        Determines whether the starting point of the subtask needs to be moved backwards, 
+        based on the subtask-specific basal rule.
+
+        Args:
+            subtask_handler (BaseAssessmentSubtask): The handler for the current subtask. 
     
         Returns:
             True if starting point needs to be moved back, otherwise False
         """
 
-        return self.item_total_scores[-1] < 2
+        return subtask_handler.check_basal_rule(self.item_total_scores)
         
 
-    
-    def check_ceiling_rule(self):
+
+    def check_ceiling_rule(self, subtask_handler):
         """
-        Determines the stopping point of the subtask.
-        TILLS Ceiling Rule for subtask 1: Six scores of 0 within a sequence of eight consecutive items 
-                            (both parts of each item must be incorrect on 6 out of 8 items)
+        Determines the stopping point of the subtask, based on the subtask-specific ceiling rule.
+
+        Args:
+            subtask_handler (BaseAssessmentSubtask): The handler for the current subtask.
 
         Returns:
             True if stopping point has been reached, otherwise False
         """
 
-        return self.item_total_scores[-8:].count(0) >= 6
+        return subtask_handler.check_ceiling_rule(self.item_total_scores)
         
 
 
-    def store_assessment(self, evaluated_pairings: ResponseEvaluation):
+    def store_assessment(self, evaluated_student_answers: BaseAssessmentEvalSchema):
         """
-        Stores the assessment results of the current item under subtask 1.
+        Stores the assessment results of the current subtask challenge item.
 
         Args:
-            evaluated_pairings (ResponseEvaluation): List of evaluations for each pairing
+            evaluated_student_answers (BaseAssessmentEvalSchema): List of challenge item evaluations.
         """
 
         self.state.update({
             "basal": self.basal_move_backwards,
             "ceiling": self.ceiling_stop_subtask,
-            "evaluated_pairings": self.state["evaluated_pairings"] + [evaluated_pairings]
+            "assessment_history": self.state["assessment_history"] + [evaluated_student_answers]
         })
 
         # Todo: store in memory
 
 
+    def reset(self):
+        """
+        Method to reset agent state.
+        """
+
+        self.subtask = ""
+        self.item_total_scores = [] 
+        self.basal_move_backwards = False
+        self.ceiling_stop_subtask = False
+       
+        self.state: AssessmentState = {            
+            "basal": False,                                              
+            "ceiling": False,                                                                             
+            "assessment_history": []            
+        }
 
 
     def analyze_behavioral_indicators(self):
@@ -256,15 +235,26 @@ class AssessmentAgent(BaseAgent):
         pass
 
 
+    def give_feedback(self):
+        """
+        Method to send feedback back to the manager agent.
+        """
+        pass
+
+
+    
 
 
 
+
+
+# Todo: generalze test code to all subtasks
 
 def pretty_print_assessment_state(assessment_state):
 
     print("\n🧠 Assessment Summary\n" + "=" * 30)
 
-    for i, response in enumerate(assessment_state['evaluated_pairings']):
+    for i, response in enumerate(assessment_state['assessment_history']):
         print(f"\n📘 Item {i + 1}")
         print("-" * 20)
         for j, eval in enumerate(response.evaluations):
@@ -284,27 +274,30 @@ def test_assessment_agent():
     llm = ChatOllama(model="gemma3", temperature=0.8)
     agent = AssessmentAgent(model=llm)
 
-    # Sample student and expected responses
-    student_response = (
-        "I think it's pen and paper because you use a pen to write on paper, "
-        "and pen and pig because you keep a pig in a pen."
+    challenge_item = ChallengeTriplet(
+        triplet=("pen", "paper", "pig"),
+        pairings=[
+            Pairing(words=("pen", "paper"), justification="you use a pen to write on paper"),
+            Pairing(words=("pen", "pig"), justification="you keep a pig in a pen")
+        ]
     )
 
-    expected_response = {
-        "pairings": [
-            {"words": ["pen", "paper"], "justification": "you use a pen to write on paper"},
-            {"words": ["pen", "pig"], "justification": "you keep a pig in a pen"}
-        ]
+    full_state = FullState()
+    full_state.challenge.challenge_type = "Vocabulary Awareness"
+    full_state.challenge.challenge_history.append(challenge_item)
+
+    full_state.student_response = {
+        "alphabetic": (
+            "I think it's pen and paper because to write on paper we need a pen, "
+            "and pen and pig because you keep a pig inside a pig pen."
+        )
     }
 
+    updated_state = agent(challenge_index=0, fullstate=full_state)
 
-    state = FullState()
-    state.student_response = student_response
-    state.expected_response = expected_response
-
-    new_state = agent(state)
-
-    pretty_print_assessment_state(new_state.assessment)
+    pretty_print_assessment_state({
+        "assessment_history": updated_state.assessment["assessment_history"]
+    })
 
 
 
