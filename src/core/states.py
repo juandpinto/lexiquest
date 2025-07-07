@@ -22,7 +22,6 @@ class ChallengeState(BaseModel):
     challenge_history: list = Field(default_factory=list, description="The history of generated challenges") # A sequence of Challenges objects containing challenge information
 
 # Todo: do we need to save the position of the established start (basal) and stop (ceiling) points?
-# Todo: generalize to all subtasks
 class AssessmentState(BaseModel):
     basal: bool = Field(default=False, description="Whether the starting point of the task should be moved backwards or not")
     ceiling: bool = Field(default=False, description="Whether the stopping point has been reached or not")
@@ -45,3 +44,5 @@ class FullState(BaseModel):
     next_agent: Optional[str] = None
     # For assessment_agent input
     student_response: Optional[str] = None
+    # For assessment_agent output
+    assessment_feedback: Optional[str] = None

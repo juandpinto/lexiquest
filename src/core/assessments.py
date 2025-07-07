@@ -8,11 +8,6 @@ from core.challenges import Pairing, BaseChallenge
 
 
 
-"""
-TODO: Maybe we should keep a seperate class for the student response.
-     Can be considered with the implementation of the multimodal agent
-"""
-
 
 class ItemScoreEnum(int, Enum):
     incorrect = 0
@@ -244,3 +239,4 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
         """
 
         return scores[-8:].count(0) >= 6 if len(scores) >= 8 else False
+    

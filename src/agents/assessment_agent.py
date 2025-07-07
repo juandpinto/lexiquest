@@ -74,6 +74,8 @@ class AssessmentAgent(BaseAgent):
         self.store_assessment(evaluated_student_answer)
         fullstate.assessment = self.state
 
+        fullstate.assessment_feedback = self.generate_feedback()
+
         return fullstate
     
 
@@ -220,6 +222,24 @@ class AssessmentAgent(BaseAgent):
         }
 
 
+    
+    def generate_feedback(self):
+        """
+        Sends feedback back to the manager agent.
+        """
+        
+        if self.basal_move_backwards:
+            return "Student did not meet the basal criterion and struggled with initial items."
+
+        elif self.ceiling_stop_subtask:
+            return "Student reached the ceiling criterion; subtask was appropriately concluded."
+
+        else:
+            return "Student completed the subtask successfully without triggering basal or ceiling limits."
+
+
+
+
     def analyze_behavioral_indicators(self):
         """
         Method to analyze student's response for SLD behavioral indicators.
@@ -235,12 +255,7 @@ class AssessmentAgent(BaseAgent):
         pass
 
 
-    def give_feedback(self):
-        """
-        Method to send feedback back to the manager agent.
-        """
-        pass
-
+    
 
     
 
@@ -298,6 +313,8 @@ def test_assessment_agent():
     pretty_print_assessment_state({
         "assessment_history": updated_state.assessment["assessment_history"]
     })
+
+    print(full_state.assessment_feedback)
 
 
 
