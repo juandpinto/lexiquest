@@ -55,5 +55,5 @@ class FullState(BaseModel):
     # For manager_router output
     next_agent: Optional[str] = None
     # For assessment_agent input
-    student_response: Optional[str] = None
-    expected_response: Optional[str] = None
+    student_response: Optional[Any] = None
+    expected_response: Optional[Any] = None

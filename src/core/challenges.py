@@ -45,15 +45,15 @@ class BaseChallenge(BaseModel):
 
 
 class Pairing(BaseModel):
-    words: Tuple[str, str] = Field(description="Tuple of words that are associated")
+    words: List[str] = Field(description="List of two words that are associated")
     justification: str = Field(default="String representing the justification for the pairing")
 
 
 class ChallengeTriplet(BaseChallenge):
-    type_key: str = "triplet"
-    challenge_type: str = "triplet"
+    type_key: str = "Vocabulary Awareness"
+    challenge_type: str = "Vocabulary Awareness"
 
-    triplet: Tuple[str, str, str] = Field(description="Word triplets for association")
+    triplet: List[str] = Field(description="List of three words for association")
     pairings: List[Pairing] = Field(description="List of pairings with their associated definitions")
 
     def summarize(self) -> Self:
@@ -66,9 +66,9 @@ class ChallengeTriplet(BaseChallenge):
     @classmethod
     def example(cls) -> "ChallengeTriplet":
         return cls(
-            triplet=("dog", "cat", "bone"),
+            triplet=["dog", "cat", "bone"],
             pairings=[
-                {"words": ("dog", "cat"), "justification": "because they are both animals"},
-                {"words": ("dog", "bone"), "justification": "because dogs like bones"}
+                {"words": ["dog", "cat"], "justification": "because they are both animals"},
+                {"words": ["dog", "bone"], "justification": "because dogs like bones"}
             ]
         )

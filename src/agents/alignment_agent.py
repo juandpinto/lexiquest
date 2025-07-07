@@ -19,10 +19,10 @@ class AlignmentAgent(BaseAgent):
         """
         print("\n--- Running Alignment Agent ---")
 
-        print()
-        print("FullState:")
-        pprint( state.model_dump())
-        print()
+        # print()
+        # print("FullState:")
+        # pprint( state.model_dump())
+        # print()
 
         if state.full_history and isinstance(state.full_history[-1], HumanMessage):
             user_message = state.full_history[-1].content
