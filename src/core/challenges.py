@@ -49,6 +49,28 @@ class Pairing(BaseModel):
     justification: str = Field(default="String representing the justification for the pairing")
 
 
+class PhonemicAwareness(BaseChallenge):
+    type_key: str = 'phonemic'
+    challenge_type: str = 'phonemic awareness'
+
+    non_word_pair: Tuple[str, str] = Field(description="Tuple containing non-word single consonant removal pairs")
+    phonemic_pair: Tuple[str, str] = Field(description="Tuple containing phonetic spelling of non-word pairs")
+
+    def summarize(self) -> Self:
+        return self
+
+    @classmethod
+    def class_type(cls) -> type["PhonemicAwareness"]:
+        return cls
+
+    @classmethod
+    def example(cls) -> "PhonemicAwareness":
+        return cls(
+            non_word_pair=("bip", "ip"),
+            phonemic_pair=("bɪp", "ɪp")
+        )
+
+
 class ChallengeTriplet(BaseChallenge):
     type_key: str = "triplet"
     challenge_type: str = "triplet"

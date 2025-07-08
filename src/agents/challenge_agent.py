@@ -1,4 +1,5 @@
 import pprint
+from phonemizer import phonemize
 from langchain_core.prompts import ChatPromptTemplate
 from typing import TypedDict, List, Any, Mapping
 from abc import ABC, abstractmethod
@@ -26,6 +27,35 @@ SUBTASK1_INSTRUCTION_CONSTRAINTS = """
 - Do not define words.
 - Try to avoid ambiguity, at least one pair within any triplet should explicitly not match.
 """
+
+SUBTASK2_INSTRUCTION_PROMPT = """
+Subtest 2 is concerned with testing students Phonemic Awareness (PA). The tests consists of presenting students with a non-word and asking them to repeat the word back to you without the first sound.
+The non-word should be no more than two syllables and should sound similar to an english word. It should be a pronouncable word with and without the first sound attached. 
+
+Your task is to produce a non-word and its associated word with the first sound removed. Additionally provide both the normal english spelling as well as the phonetic spelling of the words.
+
+Examples:
+Bip -> remove first sound -> Ip
+Brogger -> remove first sound -> Rogger 
+"""
+SUBTASK2_INSTRUCTION_CONSTRAINTS = """
+- Word must be no more than 2-3 syllables
+- Word must be able to be pronounced with and without the first sound removed
+- Words should mimic english words but still be non-real words
+- Words should have some contextual relationship with the story
+- Avoid ambiguity, there should only be one way of pronouncing the words correctly
+- Importantly, always make sure the word pair contains a non-word and the same word with the first sound removed
+"""
+
+
+CHALLENGE_MAPPER = {
+    0: (
+        SUBTASK1_INSTRUCTION_PROMPT, SUBTASK1_INSTRUCTION_CONSTRAINTS, "Vocabulary Awareness", "Text/Audio", "triplet"
+    ),
+    1: (
+        SUBTASK2_INSTRUCTION_PROMPT, SUBTASK2_INSTRUCTION_CONSTRAINTS, "Phonemic Awareness", "Text/Audio", "phonemic"
+    )
+}
 
 
 class BaseAgent(ABC):
@@ -108,7 +138,7 @@ class ChallengeAgent(BaseAgent):
         )
         self.narrative_constraints = NarrativeConstraint
         self.modality_constraint = {}
-        self.current_challenge = 0
+        self.current_challenge = 1
 
     def __call__(self, inputs: FullState) -> FullState:
         print("[challenge_agent] Input state:", inputs)
@@ -138,17 +168,20 @@ class ChallengeAgent(BaseAgent):
         :param inputs: Current state passed to the challenge agent (FullState object)
         :return list: A challenge plan with a list of challenges
         """
+
+        prompt_var, constraint_var, challenge_type, modality, example_var = CHALLENGE_MAPPER[self.current_challenge]
+
         context_input = {
             "current_narrative_context": inputs.narrative.story[-1].content,
             "story_history": str(inputs.full_history[-1].content).replace('{', '{{').replace('}', '}}').replace("'", '"'),
-            "subtask_instruction": SUBTASK1_INSTRUCTION_PROMPT,
-            "subtask_constraints": SUBTASK1_INSTRUCTION_CONSTRAINTS,
-            "challenge_type": "Vocabulary Awareness",
-            "modality": "Text/Audio",
+            "subtask_instruction": prompt_var,
+            "subtask_constraints": constraint_var,
+            "challenge_type": challenge_type,
+            "modality": modality,
         }
         # Todo setup better logic for switching between challenge types
-        current_challenge_schema = BaseChallenge.get_example_for('triplet')
-        structured_output_parser = BaseChallenge.get_class_by_type('triplet')
+        current_challenge_schema = BaseChallenge.get_example_for(example_var)
+        structured_output_parser = BaseChallenge.get_class_by_type(example_var)
         current_challenge_schema_str = str(pprint.pformat(current_challenge_schema))\
             .replace('{', '{{').replace('}', '}}').replace("'", '"')
         self.output_schema = self.output_schema.format(challenge_schema=current_challenge_schema_str).strip()
@@ -177,6 +210,15 @@ class ChallengeAgent(BaseAgent):
         challenge_history = []
         for i in range(5):
             challenge = chain.invoke({"query": query})
+
+            if self.current_challenge == 1:
+                (word, change) = challenge.non_word_pair
+                changes = phonemize([word, change], language='en-us', backend='espeak', strip=True)
+                new_word = changes[0]
+                new_change = changes[1]
+
+                challenge.phonemic_pair = (new_word, new_change)
+
             challenge_history.append(challenge)
 
             prev_challenges = "\n".join([
