@@ -1,6 +1,7 @@
 from langchain_core.messages import  AIMessage, SystemMessage, HumanMessage
 from core.states import FullState
 from agents.utils import BaseAgent
+from core.config import survey_results as default_survey_results
 
 SURVEY_PROMPT = """
 ## Objective
@@ -25,7 +26,7 @@ You are a friendly AI tasked with gathering some information about a child's age
      - "What do you want to be when you grow up?"
      - "Is there something you'd like to learn or do in the future?"
      - "What's a fun thing you'd like to try when you're older?"
-   - **Wrap-Up:** The entire conversation should last no more than 10 turns maximum. Your last message should include a positive note and *not* any questions. *MAKE SURE* that the last phrase IN YOUR FINAL MESSAGE (and only in your final message AT THE END OF THE ENTIRE SURVEY *when you've collected enough data*) is (including the line breaks) `\\n\\nOk, now we will begin our story ...<END>` (e.g., "That's so amazing! I bet you'll be an awesome astronaut!\\n\\nOk, now we will begin our story ...<END>").
+   - **Wrap-Up:** The entire conversation should last no more than 10 turns maximum. Your last message should include a positive note and *not* any questions. *MAKE SURE* that the last phrase IN YOUR FINAL MESSAGE (and only in your final MESSAGE AT THE END OF THE ENTIRE SURVEY *when you've collected enough data*) is (including the line breaks) `\\n\\nOk, now we will begin our story ...<END>` (e.g., "That's so amazing! I bet you'll be an awesome astronaut!\\n\\nOk, now we will begin our story ...<END>").
 
 3. **Adaptability:**
    - Adjust questions based on the child's responses. If they mention a specific interest (e.g., "I like building things"), you may wan to ask follow-ups (e.g., "What kind of things?"), but also at times ask an entirely different question to learn about the child's different interests and their favorite things.
@@ -105,6 +106,18 @@ Excellent! Let us begin...
 """
 
 
+TRIPLET_CHALLENGE_PROMPT = """
+You are a master storyteller for children. In the next part of the story, you must present a special challenge to the child using the following three words (the "triplet"): {triplet}. The challenge must always be to pick two of these words that go together and explain why they go together.
+
+Instructions:
+- Clearly present the three words to the child.
+- Integrate the triplet into the story as a fun puzzle or riddle, but ensure that the challenge is always to pick two of these words that go together and explain why they go together.
+- Make the challenge playful, engaging, and age-appropriate. Use simple language.
+- DO NOT resolve the challenge yourself. After the child responds to a challenge, simply acknowledge their response and move on to the next challenge.
+- Keep the story context and tone consistent with previous narrative turns.
+"""
+
+
 class NarrativeAgent(BaseAgent):
     def __init__(self, model, survey_results):
         super().__init__(name='Narrative Agent')
@@ -123,7 +136,22 @@ class NarrativeAgent(BaseAgent):
         print("\n--- Running Narrative Agent ---")
 
         print(f"\nfinished_survey: {state.narrative.finished_survey!r}", end="\n\n")
+        # --- BYPASS SURVEY FOR TESTING ---
         if not state.narrative.finished_survey:
+            # Check for skip command in latest user message
+            if state.full_history and isinstance(state.full_history[-1], HumanMessage):
+                user_msg = state.full_history[-1].content.strip()
+                if user_msg == "SKIP SURVEY":
+                    print("[NarrativeAgent] Skipping survey and using default survey_results.")
+                    state.narrative.finished_survey = True
+                    state.narrative.survey_data = str(default_survey_results)
+                    self.prompt = self.prompt.format(survey_results=state.narrative.survey_data)
+                    # Optionally, add a system message to the story to indicate skip (for debugging)
+                    skip_msg = AIMessage(content="Survey skipped for testing. Beginning story...", metadata={"agent": self.name})
+                    state.narrative.story.append(skip_msg)
+                    state.full_history.append(skip_msg)
+                    state.last_agent = self.name
+                    return state
             # Append user message
             if isinstance(state.full_history[-1], HumanMessage):
                 state.narrative.survey_conversation.append(state.full_history[-1])
@@ -149,13 +177,25 @@ class NarrativeAgent(BaseAgent):
         else:
             # Get current narrative history from the global state
             current_narrative = state.narrative.story
+            print(f"\n\ncurrent_narrative: {current_narrative!r}\n")
 
-            print()
-            print(f"current_narrative: {current_narrative!r}")
-            print()
+            if state.narrative.active_challenge:
+                next_triplet = state.narrative.next_triplet
+                print(f"\n[Narrative] next_triplet: {next_triplet}\n")
 
-            # Generate the story segment
-            story_segment = self.generate_story_segment(current_narrative)
+                # Ensure next_triplet is a ChallengeTriplet object
+                from core.challenges import ChallengeTriplet
+                if next_triplet and isinstance(next_triplet, dict):
+                    next_triplet = ChallengeTriplet.from_dict(next_triplet)
+                    state.narrative.next_triplet = next_triplet
+
+                print(f"\n\nnext_triplet: {next_triplet!r}\n")
+
+                print("Incorporating challenge triplet into the story...")
+                challenge_prompt = TRIPLET_CHALLENGE_PROMPT.format(triplet=next_triplet.triplet)
+                story_segment = self.generate_story_segment(current_narrative, challenge_prompt=challenge_prompt, next_triplet=next_triplet)
+            else:
+                story_segment = self.generate_story_segment(current_narrative)
             story_segment = self.add_agent_metadata(story_segment)
 
             # Append AI turn
@@ -180,26 +220,39 @@ class NarrativeAgent(BaseAgent):
         return next_question
 
 
-    def generate_story_segment(self, current_narrative):
+    def generate_story_segment(self, current_narrative, challenge_prompt=None, next_triplet=None):
         """
-        Generate a story segment based on the current narrative.
+        Generate a story segment based on the current narrative and (optionally) a challenge prompt.
         """
         print(f"\n--- Generating Story Segment ---")
 
         # Append system prompt
-        messages = [SystemMessage(content=self.prompt)] + current_narrative
+        if challenge_prompt:
+            prompt = challenge_prompt
+        else:
+            prompt = self.prompt
+        messages = [SystemMessage(content=prompt)] + current_narrative
 
         print(f"\nmessages: {messages!r}", end="\n\n")
 
         story_segment = self.model.invoke(messages)
         print(f"\nGenerated story segment: {story_segment.content}", end="\n\n")
 
+        print(f"\n[Narrative] challenge_prompt: {challenge_prompt}\n")
+        print(f"\n[Narrative] next_triplet: {next_triplet}\n")
+
+        # If this is a challenge, add the triplet as metadata
+        if challenge_prompt and next_triplet:
+            if getattr(story_segment, 'metadata', None) is None:
+                story_segment.metadata = {}
+            story_segment.metadata['challenge_triplet'] = next_triplet
         return story_segment
 
 
     def add_agent_metadata(self, message):
         if isinstance(message, AIMessage):
-            message.metadata = dict(message.response_metadata or {})
+            if getattr(message, 'metadata', None) is None:
+                message.metadata = {}
             message.metadata["agent"] = self.name
             return message
 

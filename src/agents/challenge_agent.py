@@ -180,8 +180,10 @@ class ChallengeAgent(BaseAgent):
             "modality": modality,
         }
         # Todo setup better logic for switching between challenge types
+
         current_challenge_schema = BaseChallenge.get_example_for(example_var)
         structured_output_parser = BaseChallenge.get_class_by_type(example_var)
+
         current_challenge_schema_str = str(pprint.pformat(current_challenge_schema))\
             .replace('{', '{{').replace('}', '}}').replace("'", '"')
         self.output_schema = self.output_schema.format(challenge_schema=current_challenge_schema_str).strip()

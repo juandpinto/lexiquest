@@ -1,7 +1,7 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
-from agents import NarrativeAgent, ChallengeAgent, ManagerAgent, AlignmentAgent
+from agents import NarrativeAgent, ChallengeAgent, ManagerAgent, AlignmentAgent, AssessmentAgent
 
 from core.config import survey_results
 from core.states import FullState
@@ -12,6 +12,7 @@ def initialize_graph(llm):
     manager_agent = ManagerAgent(model=llm)
     narrative_agent = NarrativeAgent(model=llm, survey_results=survey_results)
     challenge_agent = ChallengeAgent(model=llm)
+    assessment_agent = AssessmentAgent(model=llm)
     alignment_agent = AlignmentAgent()
 
     def survey_router(state: FullState) -> FullState:
@@ -25,14 +26,12 @@ def initialize_graph(llm):
 
     # Router node: sets a routing key in the state for conditional routing
     def manager_router(state: FullState) -> FullState:
-        print("[manager_router] Input state:", state)
+        print("[manager_router] Input state:", state.manager_decision)
         decision = getattr(state, "manager_decision", None)
         if not decision or not isinstance(decision, dict):
             state.next_agent = "narrative_agent"
         else:
             state.next_agent = decision.get("next_agent", "narrative_agent")
-        print("[manager_router] Output state:", state)
-        print("[manager_router] Output type:", type(state))
         return state
 
     # Initialize memory
@@ -46,6 +45,7 @@ def initialize_graph(llm):
         .add_node('narrative_agent', narrative_agent)
         .add_node('challenge_agent', challenge_agent)
         .add_node('manager_router', manager_router)
+        .add_node('assessment_agent', assessment_agent)
 
         .add_edge(START, 'alignment_agent')
         .add_conditional_edges(
@@ -65,10 +65,12 @@ def initialize_graph(llm):
             {
                 'narrative_agent': 'narrative_agent',
                 'challenge_agent': 'challenge_agent',
+                'assessment_agent': 'assessment_agent',
             }
         )
         .add_edge('narrative_agent', END)
         .add_edge('challenge_agent', 'manager')
+        .add_edge('assessment_agent', 'manager')
 
         .compile(checkpointer=memory)
     )
