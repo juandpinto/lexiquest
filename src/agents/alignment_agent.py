@@ -19,11 +19,6 @@ class AlignmentAgent(BaseAgent):
         """
         print("\n--- Running Alignment Agent ---")
 
-        # print()
-        # print("FullState:")
-        # pprint( state.model_dump())
-        # print()
-
         if state.full_history and isinstance(state.full_history[-1], HumanMessage):
             user_message = state.full_history[-1].content
             try:
@@ -38,4 +33,7 @@ class AlignmentAgent(BaseAgent):
                 state.input_status = "invalid_input"
         else:
             state.input_status = "valid_input"
+
+        # Save the state to a file for debugging purposes
+        state.save_to_file("state.json")
         return state

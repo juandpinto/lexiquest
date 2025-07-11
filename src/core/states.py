@@ -54,3 +54,11 @@ class FullState(BaseModel):
     student_response: Optional[str] = None
     # For assessment_agent output
     assessment_feedback: Optional[str] = None
+
+    def save_to_file(self, filename: str):
+        """
+        Serialize the FullState to a JSON file using Pydantic's .model_dump().
+        """
+        import json
+        with open(filename, 'w') as f:
+            json.dump(self.model_dump(), f, indent=2, default=str)

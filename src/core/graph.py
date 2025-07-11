@@ -1,10 +1,25 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.messages import AIMessage, HumanMessage
 
 from agents import NarrativeAgent, ChallengeAgent, ManagerAgent, AlignmentAgent, AssessmentAgent
 
 from core.config import survey_results
 from core.states import FullState
+
+
+def finish_survey_node(state: FullState) -> FullState:
+    """
+    If the survey is finished, yield a message to the frontend before the narrative agent runs.
+    """
+    print("[finish_survey_node] Checking if survey is finished...")
+    if getattr(state.narrative, "finished_survey", False):
+        print("[finish_survey_node] Survey is finished, resetting story and full history.")
+        separator_message = HumanMessage(content="--- START NOW ---")
+        state.full_history = [separator_message]  # Reset full history to just the separator
+        state.narrative.story = [separator_message]  # Reset full history to just the separator
+        print("[finish_survey_node] Story and full history reset.")
+    return state
 
 
 def initialize_graph(llm):
@@ -46,17 +61,17 @@ def initialize_graph(llm):
         .add_node('challenge_agent', challenge_agent)
         .add_node('manager_router', manager_router)
         .add_node('assessment_agent', assessment_agent)
+        .add_node('finish_survey_node', finish_survey_node)  # Add skip indicator node
 
         .add_edge(START, 'alignment_agent')
         .add_conditional_edges(
             'alignment_agent',
-            lambda state: END if state.input_status =='invalid_input' else 'manager' if state.narrative.finished_survey else 'narrative_agent'
-            # # Use the value of state.input_status for routing
-            # lambda state: getattr(state, 'input_status', 'valid_input'),
-            # {
-            #     'invalid_input': END,
-            #     'valid_input': 'manager',
-            # }
+            lambda state: 'END' if state.input_status == 'invalid_input' else 'manager' if state.narrative.finished_survey else 'narrative_agent',
+            {
+                'manager': 'manager',
+                'narrative_agent': 'narrative_agent',
+                'END': END,
+            }
         )
         .add_edge('manager', 'manager_router')
         .add_conditional_edges(
@@ -68,7 +83,16 @@ def initialize_graph(llm):
                 'assessment_agent': 'assessment_agent',
             }
         )
-        .add_edge('narrative_agent', END)
+        # Insert skip indicator before narrative_agent if survey was skipped
+        .add_conditional_edges(
+            'narrative_agent',
+            lambda state: 'finish_survey_node' if state.narrative.story[-1].content == '**--- BEGINNING STORY ---**\n---\n' else 'END',
+            {
+                'finish_survey_node': 'finish_survey_node',
+                'END': END,
+            }
+        )
+        .add_edge('finish_survey_node', 'narrative_agent')
         .add_edge('challenge_agent', 'manager')
         .add_edge('assessment_agent', 'manager')
 

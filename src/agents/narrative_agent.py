@@ -136,77 +136,75 @@ class NarrativeAgent(BaseAgent):
         print("\n--- Running Narrative Agent ---")
 
         print(f"\nfinished_survey: {state.narrative.finished_survey!r}", end="\n\n")
-        # --- BYPASS SURVEY FOR TESTING ---
+
+        # If the survey is not finished, handle the survey logic
         if not state.narrative.finished_survey:
-            # Check for skip command in latest user message
-            if state.full_history and isinstance(state.full_history[-1], HumanMessage):
-                user_msg = state.full_history[-1].content.strip()
-                if user_msg == "SKIP SURVEY":
-                    print("[NarrativeAgent] Skipping survey and using default survey_results.")
-                    state.narrative.finished_survey = True
-                    state.narrative.survey_data = str(default_survey_results)
-                    self.prompt = self.prompt.format(survey_results=state.narrative.survey_data)
-                    # Optionally, add a system message to the story to indicate skip (for debugging)
-                    skip_msg = AIMessage(content="Survey skipped for testing. Beginning story...", metadata={"agent": self.name})
-                    state.narrative.story.append(skip_msg)
-                    state.full_history.append(skip_msg)
-                    state.last_agent = self.name
-                    return state
-            # Append user message
-            if isinstance(state.full_history[-1], HumanMessage):
-                state.narrative.survey_conversation.append(state.full_history[-1])
+            return self.handle_survey(state)
 
-            next_question = self.conduct_survey(state.narrative.survey_conversation)
-            if next_question.content.endswith("<END>"):
-                # next_question.content = next_question.content[:-5] + "\n\nOk, now we will begin our story ..."
-                state.narrative.finished_survey = True
-                state.narrative.survey_data = self.format_survey_results(state.narrative.survey_conversation)
-                self.prompt = self.prompt.format(survey_results=state.narrative.survey_data)
+        # Get current narrative history from the global state
+        current_narrative = state.narrative.story
+        print(f"\n\ncurrent_narrative: {current_narrative!r}\n")
 
-            next_question = self.add_agent_metadata(next_question)
+        if state.narrative.active_challenge:
+            next_triplet = state.narrative.next_triplet
+            print(f"\n[Narrative] next_triplet: {next_triplet}\n")
 
-            # Append AI turn
-            state.narrative.survey_conversation.append(next_question)
+            # Ensure next_triplet is a ChallengeTriplet object
+            from core.challenges import ChallengeTriplet
+            if next_triplet and isinstance(next_triplet, dict):
+                next_triplet = ChallengeTriplet.from_dict(next_triplet)
+                state.narrative.next_triplet = next_triplet
 
-            # Update full_history and last_agent
-            state.full_history.append(next_question)
-            state.last_agent = self.name
+            print(f"\n\nnext_triplet: {next_triplet!r}\n")
 
-            return state
-
+            print("Incorporating challenge triplet into the story...")
+            challenge_prompt = TRIPLET_CHALLENGE_PROMPT.format(triplet=next_triplet.triplet)
+            story_segment = self.generate_story_segment(current_narrative, challenge_prompt=challenge_prompt, next_triplet=next_triplet)
         else:
-            # Get current narrative history from the global state
-            current_narrative = state.narrative.story
-            print(f"\n\ncurrent_narrative: {current_narrative!r}\n")
+            story_segment = self.generate_story_segment(current_narrative)
+        story_segment = self.add_agent_metadata(story_segment)
 
-            if state.narrative.active_challenge:
-                next_triplet = state.narrative.next_triplet
-                print(f"\n[Narrative] next_triplet: {next_triplet}\n")
+        # Append AI turn
+        state.narrative.story.append(story_segment)
 
-                # Ensure next_triplet is a ChallengeTriplet object
-                from core.challenges import ChallengeTriplet
-                if next_triplet and isinstance(next_triplet, dict):
-                    next_triplet = ChallengeTriplet.from_dict(next_triplet)
-                    state.narrative.next_triplet = next_triplet
+        # Update full_history and last_agent as before
+        state.full_history.append(story_segment)
+        state.last_agent = self.name
 
-                print(f"\n\nnext_triplet: {next_triplet!r}\n")
+        return state
 
-                print("Incorporating challenge triplet into the story...")
-                challenge_prompt = TRIPLET_CHALLENGE_PROMPT.format(triplet=next_triplet.triplet)
-                story_segment = self.generate_story_segment(current_narrative, challenge_prompt=challenge_prompt, next_triplet=next_triplet)
-            else:
-                story_segment = self.generate_story_segment(current_narrative)
-            story_segment = self.add_agent_metadata(story_segment)
+    def handle_survey(self, state: FullState) -> FullState:
+        """
+        Handles the survey logic
+        """
+        # Check for skip command in latest user message
+        if state.full_history and isinstance(state.full_history[-1], HumanMessage):
+            user_msg = state.full_history[-1].content.strip()
 
-            # Append AI turn
-            state.narrative.story.append(story_segment)
+            # Check for skip survey command
+            if user_msg == "SKIP SURVEY":
+                return self.finish_survey(state, skip_survey=True)
 
-            # Update full_history and last_agent as before
-            state.full_history.append(story_segment)
-            state.last_agent = self.name
+        # Append user message
+        if isinstance(state.full_history[-1], HumanMessage):
+            state.narrative.survey_conversation.append(state.full_history[-1])
 
-            return state
+        # Generate next survey question
+        next_question = self.conduct_survey(state.narrative.survey_conversation)
+        next_question = self.add_agent_metadata(next_question)
 
+        # Append AI turn
+        state.narrative.survey_conversation.append(next_question)
+
+        # Update full_history and last_agent
+        state.full_history.append(next_question)
+        state.last_agent = self.name
+
+        # Check if the survey is finished
+        if next_question.content.endswith("<END>"):
+            state = self.finish_survey(state)
+
+        return state
 
     def conduct_survey(self, survey_conversation):
         print(f"\n--- Asking Survey Question ---")
@@ -219,6 +217,35 @@ class NarrativeAgent(BaseAgent):
 
         return next_question
 
+    def finish_survey(self, state: FullState, skip_survey: bool = False):
+        """
+        Finish the survey and prepare the story to begin.
+        """
+        print("[NarrativeAgent] Finishing survey...")
+
+        # Set finished_survey to True
+        state.narrative.finished_survey = True
+
+        # If skip_survey is True, use default survey results
+        if skip_survey:
+            print("[NarrativeAgent] Skipping survey and using default survey results.")
+            state.narrative.survey_data = str(default_survey_results)
+        else:
+            # Format the survey results
+            state.narrative.survey_data = self.format_survey_results(state.narrative.survey_conversation)
+
+        self.prompt = self.prompt.format(survey_results=state.narrative.survey_data)
+
+        # Reset the story to start fresh
+        start_message = AIMessage(content="**--- BEGINNING STORY ---**\n---\n")
+        start_message = self.add_agent_metadata(start_message)
+        state.narrative.story = [start_message]
+
+        # Update full history and last agent
+        state.full_history.append(start_message)
+        state.last_agent = self.name
+
+        return state
 
     def generate_story_segment(self, current_narrative, challenge_prompt=None, next_triplet=None):
         """
@@ -248,14 +275,12 @@ class NarrativeAgent(BaseAgent):
             story_segment.metadata['challenge_triplet'] = next_triplet
         return story_segment
 
-
     def add_agent_metadata(self, message):
         if isinstance(message, AIMessage):
             if getattr(message, 'metadata', None) is None:
                 message.metadata = {}
             message.metadata["agent"] = self.name
             return message
-
 
     def format_survey_results(self, survey_conversation):
         """
