@@ -62,3 +62,12 @@ class FullState(BaseModel):
         import json
         with open(filename, 'w') as f:
             json.dump(self.model_dump(), f, indent=2, default=str)
+    @classmethod
+    def load_from_file(cls, filename: str):
+        """
+        Load a FullState from a JSON file.
+        """
+        import json
+        with open(filename, 'r') as f:
+            data = json.load(f)
+        return cls.model_validate(data)
