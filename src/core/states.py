@@ -19,6 +19,7 @@ class NarrativeState(BaseModel):
     used_triplets: Optional[list] = []  # List of all triplets that have been used
     user_responses: Optional[list] = []  # List of user responses to each triplet
     active_challenge: bool = False
+    challenge_index: Optional[int] = None  # The index of the current challenge in the challenge history
 
 class ChallengeState(BaseModel):
     messages: Sequence[BaseMessage] = Field(default_factory=list, description="History of messages")
@@ -62,6 +63,7 @@ class FullState(BaseModel):
         import json
         with open(filename, 'w') as f:
             json.dump(self.model_dump(), f, indent=2, default=str)
+
     @classmethod
     def load_from_file(cls, filename: str):
         """

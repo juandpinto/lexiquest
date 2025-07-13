@@ -4,7 +4,7 @@ from typing import List, Optional, ClassVar, Dict, Type
 
 from pydantic import BaseModel, Field
 
-from core.challenges import Pairing, BaseChallenge
+from core.challenges import ChallengeTriplet, Pairing, BaseChallenge
 
 
 
@@ -29,7 +29,7 @@ class BaseAssessmentEvalSchema(BaseModel):
 
 class BaseAssessmentSubtask(ABC):
     _registry: ClassVar[Dict[str, Type["BaseAssessmentSubtask"]]] = {}
-    
+
     type_key: str
     extraction_schema: Type["BaseAssessmentExtractSchema"]
     evaluation_schema: Type["BaseAssessmentEvalSchema"]
@@ -42,7 +42,7 @@ class BaseAssessmentSubtask(ABC):
     @classmethod
     def get_cls_by_key(cls, key: str) -> Type["BaseAssessmentSubtask"]:
         return cls._registry[key]
-    
+
 
     @abstractmethod
     def format_extraction_input(self, raw_student_response: Dict[str, any]) -> str:
@@ -57,7 +57,7 @@ class BaseAssessmentSubtask(ABC):
         """
 
         raise NotImplementedError
-    
+
 
     @abstractmethod
     def format_evaluation_input(self, structured_student_response: Type["BaseAssessmentExtractSchema"], challenge_item: BaseChallenge) -> str:
@@ -71,9 +71,9 @@ class BaseAssessmentSubtask(ABC):
         Returns:
             formatted_eval_input (str): Student and correct answers formatted for the evaluation prompt
         """
-        
+
         raise NotImplementedError
-    
+
 
     @abstractmethod
     def update_score(self, evaluated_student_answers: Type["BaseAssessmentEvalSchema"]) -> int:
@@ -86,37 +86,37 @@ class BaseAssessmentSubtask(ABC):
         Returns:
             item_total_score (int): Student's total score for the current subtask challenge item.
         """
-        
+
         raise NotImplementedError
-    
+
 
     @abstractmethod
     def check_basal_rule(self, scores: list[int]) -> bool:
         """
         Checks the subtask's basal rule.
-        
+
         Args:
             scores (List): List of the student's scores for each challenge item under the current subtask.
 
         Returns:
             move_back (bool): True if starting point needs to be moved back, otherwise False
         """
-        
+
         raise NotImplementedError
-    
-    
+
+
     @abstractmethod
     def check_ceiling_rule(self, scores: list[int]) -> bool:
         """
         Checks the subtask's ceiling rule.
-        
+
         Args:
             scores (List): List of the student's scores for each challenge item under the current subtask.
 
         Returns:
             stop_challenge (bool): True if stopping point has been reached, otherwise False
         """
-        
+
         raise NotImplementedError
 
 
@@ -146,15 +146,15 @@ class VAPairingEvaluation(BaseModel):
     evaluated_pairing: Pairing = Field(
         description="The student's selected word pair along with the justification."
     )
-    
+
     pair_is_valid: bool = Field(
         description="True if the selected pair reflects a valid semantic relationship."
     )
-    
+
     justification_is_valid: bool = Field(
         description="True if the justification meaningfully and clearly supports the selected pair."
     )
-    
+
     score: ItemScoreEnum = Field(
         description="Numerical score for this response: 1 = correct, if both word pair AND justification are correct; 0 = incorrect, if word pair and/or justification is incorrect."
     )
@@ -171,11 +171,15 @@ class VAItemEvaluation(BaseAssessmentEvalSchema):
         default=None,
         description="Total score for this item, computed as the sum of scores for each evaluated pair. Range: 0–2."
     )
-    
+
     def update_total_score(self):
 
-        assert len(self.evaluations) == 2, f"Expected 2 pairings, got {len(self.evaluations)}.\n"
-        
+        print(f"[VAItemEvaluation] Evaluations: {self.evaluations}")
+
+        # Removing assertion below for now.
+        # TODO: Incorporate a way for the narrative agent to encourage the student to make 2 pairs if only one is made.
+        # assert len(self.evaluations) == 2, f"Expected 2 pairings, got {len(self.evaluations)}.\n"
+
         total = sum(eval.score.value for eval in self.evaluations)
         self.total_score = VAItemScoreEnum(total)
 
@@ -190,11 +194,16 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
 
 
     def format_extraction_input(self, raw_student_response):
-        return raw_student_response["alphabetic"]
+        # return raw_student_response["alphabetic"]
+        return raw_student_response
 
 
 
     def format_evaluation_input(self, structured_student_response, challenge_item):
+
+        # Ensure that challenge_item is of type ChallengeTriplet
+        if not isinstance(challenge_item, ChallengeTriplet):
+            challenge_item = ChallengeTriplet.from_dict(challenge_item)
 
         triplet_line = str(challenge_item.triplet)
 
@@ -213,8 +222,8 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
             f"Student Response: {student_lines}\n\n"
             f"Expected Response: {expected_lines}"
         )
-        
-    
+
+
 
     def update_score(self, evaluated_student_answers):
 
@@ -229,14 +238,13 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
         """
 
         return scores[-1] < 2 if len(scores) < 4 else False
-        
+
 
 
     def check_ceiling_rule(self, scores):
         """
-        TILLS Ceiling Rule for subtask 1: Six scores of 0 within a sequence of eight consecutive items 
+        TILLS Ceiling Rule for subtask 1: Six scores of 0 within a sequence of eight consecutive items
                             (both parts of each item must be incorrect on 6 out of 8 items)
         """
 
         return scores[-8:].count(0) >= 6 if len(scores) >= 8 else False
-    

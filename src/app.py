@@ -49,7 +49,7 @@ def gradio_load_file(file_obj, api_key_ui=None):
     # Always initialize the graph before loading state
     graph, _ = ensure_graph_initialized(api_key_ui)
     state, _ = load_state_and_resume(filename, api_key_ui)
-    print(f"[gradio_load_file] Loaded state: {state}")
+    # print(f"[gradio_load_file] Loaded state: {state}")
     print(f"[gradio_load_file] Graph: {graph}")
     display_history = []
 
@@ -61,28 +61,27 @@ def gradio_load_file(file_obj, api_key_ui=None):
     if graph is not None and state is not None:
         langgraph_config = {"configurable": {"thread_id": CURRENT_THREAD_ID}}
         print(f"[gradio_load_file] Invoking graph with loaded state...")
-        try:
-            result = graph.invoke(state, langgraph_config)
-            print(f"[gradio_load_file] Graph invoke result: {result}")
-            # Build display history from loaded state and new output
-            for msg in state.narrative.story:
+
+        result = graph.invoke(state, langgraph_config)
+        # print(f"[gradio_load_file] Graph invoke result: {result}")
+        # Build display history from loaded state and new output
+        for msg in state.narrative.story:
+            if isinstance(msg, dict):
+                display_history.append(msg)
+            elif hasattr(msg, 'type') and hasattr(msg, 'content'):
+                role = 'user' if msg.type == 'human' else 'assistant'
+                display_history.append({'role': role, 'content': msg.content})
+        # If result contains new messages, append them
+        if hasattr(result, 'messages') and isinstance(result.messages, list):
+            for msg in result.messages:
                 if isinstance(msg, dict):
                     display_history.append(msg)
                 elif hasattr(msg, 'type') and hasattr(msg, 'content'):
                     role = 'user' if msg.type == 'human' else 'assistant'
                     display_history.append({'role': role, 'content': msg.content})
-            # If result contains new messages, append them
-            if hasattr(result, 'messages') and isinstance(result.messages, list):
-                for msg in result.messages:
-                    if isinstance(msg, dict):
-                        display_history.append(msg)
-                    elif hasattr(msg, 'type') and hasattr(msg, 'content'):
-                        role = 'user' if msg.type == 'human' else 'assistant'
-                        display_history.append({'role': role, 'content': msg.content})
-            elif isinstance(result, dict) and 'content' in result:
-                display_history.append({'role': 'assistant', 'content': result['content']})
-        except Exception as e:
-            print(f"[gradio_load_file] Error invoking graph: {e}")
+        elif isinstance(result, dict) and 'content' in result:
+            display_history.append({'role': 'assistant', 'content': result['content']})
+
     else:
         print(f"[gradio_load_file] Fallback: just show loaded history")
         if state and hasattr(state.narrative, 'story'):
@@ -287,7 +286,16 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
     # Function to handle message submission
     def handle_submit(message_text: str, current_display_history: List[Dict[str, Any]], api_key: str):
         if not message_text.strip():
-            yield current_display_history, CURRENT_LLM_INFO, gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+            # Only yield 7 outputs to match Gradio UI
+            yield (
+                current_display_history,  # chatbot
+                CURRENT_LLM_INFO,        # llm_status_display
+                gr.update(visible=False), # start_button
+                gr.update(visible=True),  # msg_textbox
+                gr.update(visible=True),  # clear_button
+                gr.update(visible=True),  # submit_button
+                gr.update(visible=False)  # file_loader
+            )
             return
         _app, llm_info_status = ensure_graph_initialized(api_key)
         if not isinstance(current_display_history, list): current_display_history = []
@@ -295,15 +303,39 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         full_display_history = full_display_history + [{"role": "assistant", "content": ""}]
         if not _app:
             full_display_history[-1]["content"] = f"Failed to process: {llm_info_status.replace('LLM: ', '').replace('Error: ', '')}"
-            yield full_display_history, llm_info_status, gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+            yield (
+                full_display_history,     # chatbot
+                llm_info_status,         # llm_status_display
+                gr.update(visible=False), # start_button
+                gr.update(visible=True),  # msg_textbox
+                gr.update(visible=True),  # clear_button
+                gr.update(visible=True),  # submit_button
+                gr.update(visible=False)  # file_loader
+            )
             return
         full_display_history[-1]["content"] = "..."
-        yield full_display_history, llm_info_status, gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+        yield (
+            full_display_history,         # chatbot
+            llm_info_status,             # llm_status_display
+            gr.update(visible=False),    # start_button
+            gr.update(visible=True),     # msg_textbox
+            gr.update(visible=True),     # clear_button
+            gr.update(visible=True),     # submit_button
+            gr.update(visible=False)     # file_loader
+        )
         full_response = ""
         for ai_response_chunk in chat_interface_function(message_text, api_key):
             full_response = ai_response_chunk
             full_display_history[-1]["content"] = full_response
-            yield full_display_history, llm_info_status, gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+            yield (
+                full_display_history,         # chatbot
+                llm_info_status,             # llm_status_display
+                gr.update(visible=False),    # start_button
+                gr.update(visible=True),     # msg_textbox
+                gr.update(visible=True),     # clear_button
+                gr.update(visible=True),     # submit_button
+                gr.update(visible=False)     # file_loader
+            )
 
     # Function to clear chat and reset thread
     def clear_chat_and_reset_thread():

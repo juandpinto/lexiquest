@@ -1,7 +1,7 @@
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from pydantic import BaseModel
 from typing import Any, Dict
-from agents.utils import BaseAgent
+from .utils import BaseAgent
 from core.states import FullState
 from pprint import pprint
 
@@ -79,49 +79,57 @@ class ManagerAgent(BaseAgent):
         Returns a decision dict if handling a challenge, else None, along with the updated state.
         """
         challenge_history = getattr(state.challenge, 'challenge_history', [])
+        challenge_index = state.narrative.challenge_index
+        assessment_feedback = getattr(state, 'assessment_feedback', None)
 
-        # Save the student's response if active challenge
-        if state.narrative.active_challenge:
-            prev_message = state.full_history[-1]
-            # Get previous triplet from state.narrative.story
-            for i in range(len(state.narrative.story)):
-                if isinstance(state.narrative.story[-i], AIMessage):
-                    prev_triplet = state.narrative.story[-i].metadata.get("challenge_triplet", None)
-                    break
-            if isinstance(prev_message, HumanMessage):
-                state.student_response = prev_message.content.strip()
+        # If not handling challenge flow, return no decision
+        if not challenge_history: # TODO: or no ACTIVE challenge
+            return None, state
+
+        # Incorporate first challenge if not already done
+        if challenge_index is None:
+            state.narrative.challenge_index = 0
+            return {"next_agent": "narrative_agent", "task": "Incorporate the first challenge into the story."}, state
+
+        # Check if assessment feedback is available
+        if assessment_feedback:
+            print(f"\n\n[Manager] Assessment feedback received: {assessment_feedback}\n")
+            # TODO: Handle assessment feedback logic here
+
+            state.assessment_feedback = None # Reset after processing
+
+            # Continue with next challenge if available
+            if len(challenge_history) > challenge_index + 1:
+                state.narrative.challenge_index += 1
+                # Call on the narrative agent next
+                return {"next_agent": "narrative_agent", "task": "Incorporate the next challenge into the story."}, state
             else:
-                print("No valid student response found in the last message.")
-                state.student_response = None
-            state.narrative.user_responses.append({
-                "triplet": prev_triplet,
-                "response": state.student_response
-            })
+                return None, state
 
-            print(f"\n\n[Manager] User responses: {state.narrative.user_responses}\n")
 
-            # If active challenge but no more triplets, prepare for assessment
-            if not challenge_history:
-                state.narrative.active_challenge = False
-                # Prepare expected and student responses for assessment
-                state.expected_response = [item["triplet"] for item in state.narrative.user_responses]
-                state.student_response = [item["response"] for item in state.narrative.user_responses]
-                return {"next_agent": "assessment_agent", "task": "Assess the user's responses to the challenges."}, state
+        # Save the student's response and send to assessment agent
+        print(f"\n\n[Manager] Saving student response for challenge index {challenge_index}...\n")
+        prev_message = state.full_history[-1]
+        prev_challenge = state.challenge.challenge_history[challenge_index]
+        if isinstance(prev_message, HumanMessage):
+            # state.student_response = {
+            #     'alphabetic': prev_message.content.strip()
+            # }
+            state.student_response = prev_message.content.strip()
+        else:
+            print("No valid student response found in the last message.")
+            state.student_response = None
+        state.narrative.user_responses.append({
+            "triplet": prev_challenge,
+            "response": state.student_response
+        })
 
-        # Continue with next challenge if available
-        if challenge_history:
-            state.narrative.active_challenge = True
-            # Pop the first triplet
-            next_triplet = challenge_history.pop(0)
-            state.narrative.next_triplet = next_triplet
-            state.narrative.used_triplets.append(next_triplet)
-            # Remove from challenge_history
-            state.challenge.challenge_history = challenge_history
-            # Assign narrative agent the task
-            return {"next_agent": "narrative_agent", "task": "Incorporate the following triplet into the story as a challenge: {}".format(next_triplet)}, state
+        print(f"\n\n[Manager] User responses: {state.narrative.user_responses}\n")
 
-        # If not handling challenge flow, return None
-        return None, state
+        # Call on the assessment agent next
+        return {"next_agent": "assessment_agent", "task": "Assess the user's responses to the challenges."}, state
+
+
 
     def generate_task(self, state: FullState) -> dict:
         """

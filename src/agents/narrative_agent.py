@@ -1,6 +1,6 @@
 from langchain_core.messages import  AIMessage, SystemMessage, HumanMessage
 from core.states import FullState
-from agents.utils import BaseAgent
+from .utils import BaseAgent
 from core.config import survey_results as default_survey_results
 
 SURVEY_PROMPT = """
@@ -107,11 +107,11 @@ Excellent! Let us begin...
 
 
 TRIPLET_CHALLENGE_PROMPT = """
-You are a master storyteller for children. In the next part of the story, you must present a special challenge to the child using the following three words (the "triplet"): {triplet}. The challenge must always be to pick two of these words that go together and explain why they go together.
+You are a master storyteller for children. In the next part of the story, you must present a special challenge to the child using the following three words (the "triplet"): {triplet}. The challenge must always be to pick two pairs of these words that go together and explain why they go together.
 
 Instructions:
 - Clearly present the three words to the child.
-- Integrate the triplet into the story as a fun puzzle or riddle, but ensure that the challenge is always to pick two of these words that go together and explain why they go together.
+- Integrate the triplet into the story as a fun puzzle or riddle, but ensure that the challenge is always to pick two different pairs of these words that go together and provide a justification for each.
 - Make the challenge playful, engaging, and age-appropriate. Use simple language.
 - DO NOT resolve the challenge yourself. After the child responds to a challenge, simply acknowledge their response and move on to the next challenge.
 - Keep the story context and tone consistent with previous narrative turns.
@@ -145,21 +145,27 @@ class NarrativeAgent(BaseAgent):
         current_narrative = state.narrative.story
         print(f"\n\ncurrent_narrative: {current_narrative!r}\n")
 
-        if state.narrative.active_challenge:
-            next_triplet = state.narrative.next_triplet
-            print(f"\n[Narrative] next_triplet: {next_triplet}\n")
+        challenge_index = state.narrative.challenge_index
 
-            # Ensure next_triplet is a ChallengeTriplet object
-            from core.challenges import ChallengeTriplet
-            if next_triplet and isinstance(next_triplet, dict):
-                next_triplet = ChallengeTriplet.from_dict(next_triplet)
-                state.narrative.next_triplet = next_triplet
+        if challenge_index is not None:
+            next_challenge = state.challenge.challenge_history[challenge_index]
+            print(f"\n[Narrative] next_challenge: {next_challenge}\n")
 
-            print(f"\n\nnext_triplet: {next_triplet!r}\n")
+            print(f"\n\nnext_challenge: {next_challenge!r}\n")
 
-            print("Incorporating challenge triplet into the story...")
-            challenge_prompt = TRIPLET_CHALLENGE_PROMPT.format(triplet=next_triplet.triplet)
-            story_segment = self.generate_story_segment(current_narrative, challenge_prompt=challenge_prompt, next_triplet=next_triplet)
+            print("Incorporating challenge into the story...")
+            if state.challenge.challenge_type == "Vocabulary Awareness":
+                # Ensure next_challenge is a ChallengeTriplet object
+                from core.challenges import ChallengeTriplet
+                if next_challenge and isinstance(next_challenge, dict):
+                    next_challenge = ChallengeTriplet.from_dict(next_challenge)
+
+                challenge_prompt = TRIPLET_CHALLENGE_PROMPT.format(triplet=next_challenge.triplet)
+            else:
+                #TODO: Implement handling for other challenge types
+                challenge_prompt = None
+
+            story_segment = self.generate_story_segment(current_narrative, challenge_prompt=challenge_prompt, next_challenge=next_challenge)
         else:
             story_segment = self.generate_story_segment(current_narrative)
         story_segment = self.add_agent_metadata(story_segment)
@@ -247,7 +253,7 @@ class NarrativeAgent(BaseAgent):
 
         return state
 
-    def generate_story_segment(self, current_narrative, challenge_prompt=None, next_triplet=None):
+    def generate_story_segment(self, current_narrative, challenge_prompt=None, next_challenge=None):
         """
         Generate a story segment based on the current narrative and (optionally) a challenge prompt.
         """
@@ -260,19 +266,19 @@ class NarrativeAgent(BaseAgent):
             prompt = self.prompt
         messages = [SystemMessage(content=prompt)] + current_narrative
 
-        print(f"\nmessages: {messages!r}", end="\n\n")
+        # print(f"\nmessages: {messages!r}", end="\n\n")
 
         story_segment = self.model.invoke(messages)
-        print(f"\nGenerated story segment: {story_segment.content}", end="\n\n")
+        # print(f"\nGenerated story segment: {story_segment.content}", end="\n\n")
 
         print(f"\n[Narrative] challenge_prompt: {challenge_prompt}\n")
-        print(f"\n[Narrative] next_triplet: {next_triplet}\n")
+        print(f"\n[Narrative] next_challenge: {next_challenge}\n")
 
         # If this is a challenge, add the triplet as metadata
-        if challenge_prompt and next_triplet:
+        if challenge_prompt and next_challenge:
             if getattr(story_segment, 'metadata', None) is None:
                 story_segment.metadata = {}
-            story_segment.metadata['challenge_triplet'] = next_triplet
+            story_segment.metadata['challenge_triplet'] = next_challenge
         return story_segment
 
     def add_agent_metadata(self, message):

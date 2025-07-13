@@ -1,6 +1,6 @@
 from guardrails.hub import ProfanityFree
 from core.states import FullState
-from agents.utils import BaseAgent
+from .utils import BaseAgent
 from langchain_core.messages import HumanMessage, AIMessage
 from pprint import pprint
 
