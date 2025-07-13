@@ -71,6 +71,30 @@ class PhonemicAwareness(BaseChallenge):
         )
 
 
+class InferentialVocabulary(BaseChallenge):
+    type_key: str = "Inferential Vocabulary"
+    challenge_type: str = "IV"
+
+    a_question: str = Field(description="String representing the primary inferential vocabulary question")
+    b_question: str = Field(description="String representation of alternative inferential vocabulary question")
+    word_meaning_pair: Tuple[str, str] = Field(description="A tuple containing a word and its expected meaning")
+
+    def summarize(self) -> Self:
+        return self
+
+    @classmethod
+    def class_type(cls) -> type["BaseChallenge"]:
+        return cls
+
+    @classmethod
+    def example(cls) -> "InferentialVocabulary":
+        return cls(
+            a_question="Scott was tumbling off his skateboard. He kept getting hurt. What does tumble mean?",
+            b_question="Does tumble mean to ride or to fall?",
+            word_meaning_pair=("tumble", "to fall suddenly, clumsily, or headlong")
+        )
+
+
 class ChallengeTriplet(BaseChallenge):
     type_key: str = "Vocabulary Awareness"
     challenge_type: str = "Vocabulary Awareness"
