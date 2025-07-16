@@ -1,5 +1,6 @@
 from abc import abstractmethod
-from typing import ClassVar, Dict, Type, Any, List, Self, Tuple
+from typing import ClassVar, Dict, Type, Any, List, Tuple
+from typing_extensions import Self
 from pydantic import BaseModel, Field
 
 
