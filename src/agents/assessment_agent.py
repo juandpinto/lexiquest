@@ -1,8 +1,7 @@
-
 from langchain_ollama import ChatOllama
 
-from utils import BaseAgent
-from prompts import ASSESSMENT_PROMPTS
+from .utils import BaseAgent
+from .prompts import ASSESSMENT_PROMPTS
 from core.states import FullState, AssessmentState
 from core.challenges import BaseChallenge, Pairing, ChallengeTriplet
 from core.assessments import BaseAssessmentSubtask, BaseAssessmentExtractSchema, BaseAssessmentEvalSchema
@@ -41,13 +40,12 @@ class AssessmentAgent(BaseAgent):
 
 
 
-    def __call__(self, challenge_index: int, fullstate: FullState) -> FullState:
+    def __call__(self, fullstate: FullState) -> FullState:
         """
         Main callable interface for the Assessment Agent.
         Evaluates student response to a TILLS subtask challenge.
 
         Args:
-            challenge_index (int): Index of the challene being evaluated.
             state (FullState): The current state dictionary containing student response, expected answer, scoring history,
                                 and other agent context.
 
@@ -56,17 +54,19 @@ class AssessmentAgent(BaseAgent):
             current item, and updated flags (e.g., basal, response mode).
         """
 
+        challenge_index = fullstate.narrative.challenge_index
+
         subtask_key = fullstate.challenge.challenge_type # e.g Vocabulary Awareness
         subtask_handler = self.get_subtask(subtask_key)
 
         raw_student_response = fullstate.student_response
-        challange_item = fullstate.challenge.challenge_history[challenge_index]
+        challenge_item = fullstate.challenge.challenge_history[challenge_index]
 
-        print("--- Running Assessment Agent ---")
+        print("\n--- Running Assessment Agent ---")
 
         # todo: handle exception case if these don't exist
         extracted_student_answer = self.extract_student_answers(subtask_handler, raw_student_response)
-        evaluated_student_answer = self.evaluate_student_answers(subtask_handler, extracted_student_answer, challange_item)
+        evaluated_student_answer = self.evaluate_student_answers(subtask_handler, extracted_student_answer, challenge_item)
 
         self.basal_move_backwards = self.check_basal_rule(subtask_handler)
         self.ceiling_stop_subtask = self.check_ceiling_rule(subtask_handler)
@@ -126,7 +126,7 @@ class AssessmentAgent(BaseAgent):
 
 
 
-    def evaluate_student_answers(self, subtask_handler: BaseAssessmentSubtask, extracted_student_answers: BaseAssessmentExtractSchema, challange_item: BaseChallenge) -> BaseAssessmentEvalSchema:
+    def evaluate_student_answers(self, subtask_handler: BaseAssessmentSubtask, extracted_student_answers: BaseAssessmentExtractSchema, challenge_item: BaseChallenge) -> BaseAssessmentEvalSchema:
         """
         Evaluates student's answers to the given subtask challenge.
 
@@ -139,7 +139,7 @@ class AssessmentAgent(BaseAgent):
             evaluated_student_answers (BaseAssessmentEvalSchema): List of evaluations for each pairing
         """
 
-        formatted_input = subtask_handler.format_evaluation_input(extracted_student_answers, challange_item)
+        formatted_input = subtask_handler.format_evaluation_input(extracted_student_answers, challenge_item)
 
         eval_prompt_str = self.prompt_template.format(
             subtask_description = ASSESSMENT_PROMPTS[subtask_handler.type_key]["description"],
@@ -315,6 +315,8 @@ def test_assessment_agent():
     })
 
     print(full_state.assessment_feedback)
+
+    print('\n\n' + str(updated_state.assessment))
 
 
 

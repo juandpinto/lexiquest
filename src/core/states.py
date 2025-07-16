@@ -19,6 +19,7 @@ class NarrativeState(BaseModel):
     used_triplets: Optional[list] = []  # List of all triplets that have been used
     user_responses: Optional[list] = []  # List of user responses to each triplet
     active_challenge: bool = False
+    challenge_index: Optional[int] = None  # The index of the current challenge in the challenge history
 
 class ChallengeState(BaseModel):
     messages: Sequence[BaseMessage] = Field(default_factory=list, description="History of messages")
@@ -54,3 +55,21 @@ class FullState(BaseModel):
     student_response: Optional[str] = None
     # For assessment_agent output
     assessment_feedback: Optional[str] = None
+
+    def save_to_file(self, filename: str):
+        """
+        Serialize the FullState to a JSON file using Pydantic's .model_dump().
+        """
+        import json
+        with open(filename, 'w') as f:
+            json.dump(self.model_dump(), f, indent=2, default=str)
+
+    @classmethod
+    def load_from_file(cls, filename: str):
+        """
+        Load a FullState from a JSON file.
+        """
+        import json
+        with open(filename, 'r') as f:
+            data = json.load(f)
+        return cls.model_validate(data)
