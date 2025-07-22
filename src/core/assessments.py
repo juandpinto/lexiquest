@@ -34,6 +34,8 @@ class BaseAssessmentSubtask(ABC):
     extraction_schema: Type["BaseAssessmentExtractSchema"]
     evaluation_schema: Type["BaseAssessmentEvalSchema"]
 
+    max_item_score: int
+
     def __init_subclass__(cls):
         if hasattr(cls, "type_key"):
             BaseAssessmentSubtask._registry[cls.type_key] = cls
@@ -191,6 +193,8 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
     type_key = "Vocabulary Awareness"
     extraction_schema = VAPairingList
     evaluation_schema = VAItemEvaluation
+
+    max_item_score = 2
 
 
     def format_extraction_input(self, raw_student_response):

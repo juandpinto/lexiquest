@@ -43,7 +43,7 @@ ASSESSMENT_PROMPTS = {
 
                         - Student Response:
                             (light, sun): light comes from sun
-                            (light, feather): feathers are light
+                            (sun, feather): both are light
 
                         - Expected Response:
                             (light, sun): because sun gives light / both are bright
@@ -54,11 +54,11 @@ ASSESSMENT_PROMPTS = {
                             "light comes from sun": True
                             Score: 1
 
-                            (feather, light): True
-                            "feathers are light": True
-                            Score: 1
+                            (sun, feather): False
+                            "both are light": False
+                            Score: 0
 
-                            Total Score = 1 + 1 = 2
+                            Total Score = 1 + 0 = 2
                     """
     },
 }

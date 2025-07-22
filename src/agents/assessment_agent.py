@@ -1,12 +1,13 @@
 from langchain_ollama import ChatOllama
 
-from .utils import BaseAgent
-from .prompts import ASSESSMENT_PROMPTS
+from utils import BaseAgent
+from prompts import ASSESSMENT_PROMPTS
 from core.states import FullState, AssessmentState
 from core.challenges import BaseChallenge, Pairing, ChallengeTriplet
 from core.assessments import BaseAssessmentSubtask, BaseAssessmentExtractSchema, BaseAssessmentEvalSchema
 
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
 
 class AssessmentAgent(BaseAgent):
@@ -22,6 +23,7 @@ class AssessmentAgent(BaseAgent):
         self.state: AssessmentState = {
             "basal": False,
             "ceiling": False,
+            "assessment_summary": {},
             "assessment_history": []
         }
 
@@ -71,7 +73,7 @@ class AssessmentAgent(BaseAgent):
         self.basal_move_backwards = self.check_basal_rule(subtask_handler)
         self.ceiling_stop_subtask = self.check_ceiling_rule(subtask_handler)
 
-        self.store_assessment(evaluated_student_answer)
+        self.store_assessment(subtask_handler, evaluated_student_answer)
         fullstate.assessment = self.state
 
         fullstate.assessment_feedback = self.generate_feedback()
@@ -125,7 +127,6 @@ class AssessmentAgent(BaseAgent):
         return extracted_student_answer
 
 
-
     def evaluate_student_answers(self, subtask_handler: BaseAssessmentSubtask, extracted_student_answers: BaseAssessmentExtractSchema, challenge_item: BaseChallenge) -> BaseAssessmentEvalSchema:
         """
         Evaluates student's answers to the given subtask challenge.
@@ -157,7 +158,7 @@ class AssessmentAgent(BaseAgent):
 
 
 
-    def check_basal_rule(self, subtask_handler):
+    def check_basal_rule(self, subtask_handler: BaseAssessmentSubtask):
         """
         Determines whether the starting point of the subtask needs to be moved backwards,
         based on the subtask-specific basal rule.
@@ -173,7 +174,7 @@ class AssessmentAgent(BaseAgent):
 
 
 
-    def check_ceiling_rule(self, subtask_handler):
+    def check_ceiling_rule(self, subtask_handler: BaseAssessmentSubtask):
         """
         Determines the stopping point of the subtask, based on the subtask-specific ceiling rule.
 
@@ -188,20 +189,38 @@ class AssessmentAgent(BaseAgent):
 
 
 
-    def store_assessment(self, evaluated_student_answers: BaseAssessmentEvalSchema):
+    def store_assessment(self, subtask_handler: BaseAssessmentSubtask, evaluated_student_answers: BaseAssessmentEvalSchema):
         """
         Stores the assessment results of the current subtask challenge item.
 
         Args:
             evaluated_student_answers (BaseAssessmentEvalSchema): List of challenge item evaluations.
+            subtask_handler (BaseAssessmentSubtask): The handler for the current subtask.
         """
+
+        if subtask_handler.type_key not in self.state["assessment_summary"]:
+            self.state["assessment_summary"][subtask_handler.type_key] = {
+                "total_items": 0,
+                "total_score": 0,
+                "average_score": 0.0
+            }
+
+        summary = self.state["assessment_summary"][subtask_handler.type_key]
+
+        summary["total_items"] += 1
+        summary["total_score"] += self.item_total_scores[-1]
+        summary["normalized_average"] = round(
+            summary["total_score"] / (summary["total_items"] * subtask_handler.max_item_score), 2
+        )
 
         self.state.update({
             "basal": self.basal_move_backwards,
             "ceiling": self.ceiling_stop_subtask,
+            "assessment_summary": summary,
             "assessment_history": self.state["assessment_history"] + [evaluated_student_answers]
         })
 
+       
         # Todo: store in memory
 
 
@@ -218,6 +237,7 @@ class AssessmentAgent(BaseAgent):
         self.state: AssessmentState = {
             "basal": False,
             "ceiling": False,
+            "assessment_summary": {},
             "assessment_history": []
         }
 
@@ -228,7 +248,10 @@ class AssessmentAgent(BaseAgent):
         Sends feedback back to the manager agent.
         """
 
-        if self.basal_move_backwards:
+        if self.basal_move_backwards and self.ceiling_stop_subtask:
+            return "Student showed signs of struggle with inital items and also reached the ceiling criterion."
+
+        elif self.basal_move_backwards:
             return "Student did not meet the basal criterion and struggled with initial items."
 
         elif self.ceiling_stop_subtask:
@@ -236,7 +259,6 @@ class AssessmentAgent(BaseAgent):
 
         else:
             return "Student completed the subtask successfully without triggering basal or ceiling limits."
-
 
 
 
@@ -267,10 +289,10 @@ class AssessmentAgent(BaseAgent):
 
 def pretty_print_assessment_state(assessment_state):
 
-    print("\n🧠 Assessment Summary\n" + "=" * 30)
+    print("\n\U0001F9E0 Assessment Summary\n" + "=" * 30)
 
     for i, response in enumerate(assessment_state['assessment_history']):
-        print(f"\n📘 Item {i + 1}")
+        print(f"\n\U0001F4D8 Item {i + 1}")
         print("-" * 20)
         for j, eval in enumerate(response.evaluations):
             pair = eval.evaluated_pairing.words
@@ -282,43 +304,60 @@ def pretty_print_assessment_state(assessment_state):
             print(f"    Score: {eval.score.value}")
         print(f"  Total Score: {response.total_score.value}")
 
-
-
 def test_assessment_agent():
-
     llm = ChatOllama(model="gemma3", temperature=0.8)
     agent = AssessmentAgent(model=llm)
 
-    challenge_item = ChallengeTriplet(
-        triplet=("pen", "paper", "pig"),
-        pairings=[
-            Pairing(words=("pen", "paper"), justification="you use a pen to write on paper"),
-            Pairing(words=("pen", "pig"), justification="you keep a pig in a pen")
-        ]
-    )
+    challenges = [
+        ChallengeTriplet(
+            triplet=("pen", "paper", "pig"),
+            pairings=[
+                Pairing(words=("pen", "paper"), justification="you use a pen to write on paper"),
+                Pairing(words=("pen", "pig"), justification="you keep a pig in a pen")
+            ]
+        ),
+        ChallengeTriplet(
+            triplet=("sun", "moon", "light"),
+            pairings=[
+                Pairing(words=("sun", "light"), justification="the sun gives off light"),
+                Pairing(words=("moon", "sun"), justification="both are in the sky")
+            ]
+        ),
+        ChallengeTriplet(
+            triplet=("dog", "cat", "bone"),
+            pairings=[
+                Pairing(words=("dog", "cat"), justification="both are common pets"),
+                Pairing(words=("dog", "bone"), justification="dogs like bones")
+            ]
+        )
+    ]
+
+    responses = [
+        "pen and paper because you write with a pen, and pen and pig because pigs live in pens.",
+        "sun and light because the sun makes light, and sun and moon because they're both in the sky.",
+        "cat and bone because cats chew bones, and cat and dog because they are animals."
+    ]
 
     full_state = FullState()
     full_state.challenge.challenge_type = "Vocabulary Awareness"
-    full_state.challenge.challenge_history.append(challenge_item)
 
-    full_state.student_response = {
-        "alphabetic": (
-            "I think it's pen and paper because to write on paper we need a pen, "
-            "and pen and pig because you keep a pig inside a pig pen."
-        )
-    }
-
-    updated_state = agent(challenge_index=0, fullstate=full_state)
+    for challenge, response in zip(challenges, responses):
+        full_state.challenge.challenge_history.append(challenge)
+        full_state.student_response = response
+        full_state.narrative.challenge_index = len(full_state.challenge.challenge_history) - 1
+        full_state = agent(fullstate=full_state)
 
     pretty_print_assessment_state({
-        "assessment_history": updated_state.assessment["assessment_history"]
+        "assessment_history": full_state.assessment["assessment_history"]
     })
 
+    print("\n\nFeedback Summary:")
     print(full_state.assessment_feedback)
 
-    print('\n\n' + str(updated_state.assessment))
-
+    print('\n\nFull Assessment State Summary:\n')
+    print(full_state.assessment)
 
 
 if __name__ == "__main__":
     test_assessment_agent()
+

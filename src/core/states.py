@@ -34,7 +34,9 @@ class ChallengeState(BaseModel):
 class AssessmentState(BaseModel):
     basal: bool = Field(default=False, description="Whether the starting point of the task should be moved backwards or not")
     ceiling: bool = Field(default=False, description="Whether the stopping point has been reached or not")
+    assessment_summary: dict = Field(default_factory=dict, description="Summary of the current challenge assessment.")
     assessment_history: list = Field(default_factory=list, description="The history of evaluated student answers")
+
 
 class FullState(BaseModel):
     # The full global state, namespaced per agent
