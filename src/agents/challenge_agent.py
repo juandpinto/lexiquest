@@ -138,7 +138,7 @@ class ChallengeAgent(BaseAgent):
         )
         self.narrative_constraints = NarrativeConstraint
         self.modality_constraint = {}
-        self.current_challenge = 1
+        self.current_challenge = 0
 
     def __call__(self, inputs: FullState) -> FullState:
         print("[challenge_agent] Input state:", inputs)
@@ -215,11 +215,12 @@ class ChallengeAgent(BaseAgent):
 
             if self.current_challenge == 1:
                 (word, change) = challenge.non_word_pair
-                changes = phonemize([word, change], language='en-us', backend='espeak', strip=True)
-                new_word = changes[0]
-                new_change = changes[1]
+                # Todo figure out a better way to get phonemes
+                # changes = phonemize([word, change], language='en-us', backend='espeak', strip=True)
+                # new_word = changes[0]
+                # new_change = changes[1]
 
-                challenge.phonemic_pair = (new_word, new_change)
+                challenge.phonemic_pair = (word, change)
 
             challenge_history.append(challenge)
 

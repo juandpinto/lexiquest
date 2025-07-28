@@ -1,8 +1,11 @@
 import gradio as gr
 import os
 import uuid
+import re
 import traceback
+import shutil
 from typing import Optional, List, Dict, Any
+from core.audio_utils import speak_text, get_tts_model, get_stt_model, transcribe_speech
 
 # Langchain and LLM imports
 from langchain_core.messages import HumanMessage, AIMessage
@@ -11,8 +14,10 @@ from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 # Import from the new graph location
-from core.graph import initialize_graph # MODIFIED IMPORT
+from core.graph import initialize_graph  # MODIFIED IMPORT
 from core.states import FullState
+
+
 # --- NEW: Load state from file and initialize graph ---
 def load_state_and_resume(filename: str, api_key_ui: Optional[str] = None):
     """
@@ -35,6 +40,7 @@ def load_state_and_resume(filename: str, api_key_ui: Optional[str] = None):
             except Exception as e:
                 print(f"Error updating graph state: {e}")
     return state, graph
+
 
 # --- Gradio handler for file upload ---
 def gradio_load_file(file_obj, api_key_ui=None):
@@ -94,6 +100,7 @@ def gradio_load_file(file_obj, api_key_ui=None):
     print(f"[gradio_load_file] Final display_history: {display_history}")
     return display_history
 
+
 # Define a configurable thread_id
 def generate_thread_id(prefix: str = "", length: int = 8) -> str:
     """
@@ -102,11 +109,14 @@ def generate_thread_id(prefix: str = "", length: int = 8) -> str:
     """
     return f'LQ-{prefix}_{str(uuid.uuid4())[:length]}'
 
+
 # Global state variables
 LANG_GRAPH_APP: Optional[Any] = None
 CURRENT_LLM_INFO: str = "LLM: Not yet determined. Press 'Let's start!' or send a message."
 CURRENT_THREAD_ID: str = generate_thread_id(prefix="chat")
 PREVIOUS_API_KEY_USED: Optional[str] = None
+tts_model = get_tts_model('tts_models/en/ljspeech/tacotron2-DDC')
+stt_model = get_stt_model('tiny')
 
 
 # LLM selection logic
@@ -132,15 +142,17 @@ def get_llm(api_key_from_ui: Optional[str] = None):
                 return llm, "OpenAI (GPT-3.5-Turbo via UI)"
             except Exception as e:
                 print(f"Error initializing OpenAI with UI key: {e}. Falling back to environment variables or Ollama.")
-        elif api_key_from_ui.startswith("AIza"): # Google API keys typically start with "AIza"
+        elif api_key_from_ui.startswith("AIza"):  # Google API keys typically start with "AIza"
             print("Attempting to use Google LLM with API key from UI.")
             try:
-                llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key_from_ui, temperature=0.8) # Changed to gemini-2.0-flash, ensure model name is correct
+                llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key_from_ui,
+                                             temperature=0.8)  # Changed to gemini-2.0-flash, ensure model name is correct
                 return llm, "Google (Gemini 2.0 Flash via UI)"
             except Exception as e:
                 print(f"Error initializing Google with UI key: {e}. Falling back to environment variables or Ollama.")
         else:
-            print(f"API key from UI has an unrecognized prefix ('{api_key_from_ui[:4]}...'). Will try environment variables or Ollama.")
+            print(
+                f"API key from UI has an unrecognized prefix ('{api_key_from_ui[:4]}...'). Will try environment variables or Ollama.")
 
     openai_api_key_env = os.environ.get("OPENAI_API_KEY")
     if openai_api_key_env:
@@ -155,7 +167,8 @@ def get_llm(api_key_from_ui: Optional[str] = None):
     if google_api_key_env:
         print("Attempting to use Google LLM with API key from environment.")
         try:
-            llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=google_api_key_env, temperature=0.8) # Changed to gemini-2.0-flash
+            llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=google_api_key_env,
+                                         temperature=0.8)  # Changed to gemini-2.0-flash
             return llm, "Google (Gemini 2.0 Flash via ENV)"
         except Exception as e:
             print(f"Error initializing Google with ENV key: {e}. Falling back to Ollama.")
@@ -163,7 +176,7 @@ def get_llm(api_key_from_ui: Optional[str] = None):
     print("Attempting to use Ollama LLM (gemma3) as fallback.")
     try:
         # Ensure gemma3 is a valid model name for your ChatOllama setup
-        llm = ChatOllama(model="gemma3", temperature=0.8) # Using a common naming for Ollama models
+        llm = ChatOllama(model="gemma3", temperature=0.8)  # Using a common naming for Ollama models
         return llm, "Ollama (gemma)"
     except Exception as e:
         error_message = f"Error initializing Ollama: {e}. No LLM could be initialized. Please check API keys or ensure Ollama server is running."
@@ -176,24 +189,26 @@ def ensure_graph_initialized(api_key_ui: Optional[str]):
     global LANG_GRAPH_APP, CURRENT_LLM_INFO, PREVIOUS_API_KEY_USED, CURRENT_THREAD_ID
 
     if LANG_GRAPH_APP is None or PREVIOUS_API_KEY_USED != api_key_ui:
-        print(f"Initializing graph. App is None: {LANG_GRAPH_APP is None}. API key changed: {PREVIOUS_API_KEY_USED != api_key_ui if PREVIOUS_API_KEY_USED else 'N/A' != api_key_ui}")
+        print(
+            f"Initializing graph. App is None: {LANG_GRAPH_APP is None}. API key changed: {PREVIOUS_API_KEY_USED != api_key_ui if PREVIOUS_API_KEY_USED else 'N/A' != api_key_ui}")
         try:
             llm, llm_info = get_llm(api_key_ui)
-            LANG_GRAPH_APP = initialize_graph(llm) # This now calls the function from src.core.graph
+            LANG_GRAPH_APP = initialize_graph(llm)  # This now calls the function from src.core.graph
             CURRENT_LLM_INFO = f"LLM: {llm_info} (Thread: {CURRENT_THREAD_ID})"
             PREVIOUS_API_KEY_USED = api_key_ui
             print(f"Graph initialized successfully with {llm_info} on thread {CURRENT_THREAD_ID}")
         except Exception as e:
             error_msg = f"Error initializing chat system: {e}"
             print(error_msg)
-            LANG_GRAPH_APP = None # Ensure app is None if initialization fails
+            LANG_GRAPH_APP = None  # Ensure app is None if initialization fails
             CURRENT_LLM_INFO = f"Error: {str(e)}. Check API key or Ollama."
             # Do not raise here; let UI handlers show the error via CURRENT_LLM_INFO
     return LANG_GRAPH_APP, CURRENT_LLM_INFO
 
 
 # --- Gradio Chat Function ---
-def chat_interface_function(message_text: str, api_key_ui: str): # api_key_ui is for ensure_graph_initialized
+def chat_interface_function(message_text: str, api_key_ui: str,
+                            tts_enabled):  # api_key_ui is for ensure_graph_initialized
     global LANG_GRAPH_APP, CURRENT_THREAD_ID, CURRENT_LLM_INFO
 
     # Ensure the graph is initialized with the current API key
@@ -216,6 +231,15 @@ def chat_interface_function(message_text: str, api_key_ui: str): # api_key_ui is
             yield output
         else:
             yield f"*{metadata['langgraph_node']} is processing...*"
+    if tts_enabled:
+        emoji_pattern = re.compile("["
+                                   u"\U0001F600-\U0001F64F"  # emoticons
+                                   u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+                                   u"\U0001F680-\U0001F6FF"  # transport & map symbols
+                                   u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
+                                   "]+", flags=re.UNICODE)
+        output = emoji_pattern.sub(r'', output)
+        speak_text(tts_model, output)
 
 
 # --- Gradio UI Setup ---
@@ -231,7 +255,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
             lines=1,
             scale=3
         )
-        llm_status_display = gr.Markdown(value=CURRENT_LLM_INFO) # Use initial value
+        llm_status_display = gr.Markdown(value=CURRENT_LLM_INFO)  # Use initial value
 
     chatbot = gr.Chatbot(
         label="Story Adventure",
@@ -250,13 +274,28 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         with gr.Column(scale=2):
             submit_button = gr.Button("Submit", variant="primary", visible=False)  # Initially hidden
             clear_button = gr.Button("Start over", visible=False)  # Initially hidden
+            toggle_tts = gr.Button("Speak", visible=False)
+            # toggle_stt = gr.Audio(sources=['microphone'], label='Record', type='filepath')
+
+    audio_box = gr.Audio(sources=['microphone'], label='Record',
+                         type='filepath', waveform_options=gr.WaveformOptions(waveform_color="#B83A4B"), )
+    """with gr.Row():
+        audio_btn = gr.Button('Speak')
+        clear = gr.Button("Clear")"""
+
+    HARDCODED_AUDIO_PATH = "latest_recording.wav"
+
+    # clear.click(lambda: None, None, msg_textbox, queue=False)
+
     start_button = gr.Button("Let's start!", variant="primary", visible=True)  # Initially visible
     file_loader = gr.File(label="Load conversation file", type="filepath", visible=True)
+
 
     # Event handler for API key changes
     def handle_api_key_change_effect(api_key: str):
         _app, llm_info_status = ensure_graph_initialized(api_key)
         return llm_info_status
+
 
     api_key_textbox.change(
         fn=handle_api_key_change_effect,
@@ -265,26 +304,32 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         show_progress="hidden"
     )
 
+
     # Function to handle starting the story
-    def handle_start_story(current_display_history: List[Dict[str, Any]], api_key: str):
+    def handle_start_story(current_display_history: List[Dict[str, Any]], api_key: str, tts_enabled):
         _app, llm_info_status = ensure_graph_initialized(api_key)
         if not isinstance(current_display_history, list): current_display_history = []
         full_display_history = current_display_history + [{"role": "assistant", "content": ""}]
         if not _app:
-            full_display_history[-1]["content"] = f"Failed to start: {llm_info_status.replace('LLM: ', '').replace('Error: ', '')}"
+            full_display_history[-1][
+                "content"] = f"Failed to start: {llm_info_status.replace('LLM: ', '').replace('Error: ', '')}"
             # Show start button, hide others
-            yield full_display_history, llm_info_status, gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+            yield full_display_history, llm_info_status, gr.update(visible=True), gr.update(visible=False), gr.update(
+                visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
             return
         # Show chat controls, hide start button
-        yield full_display_history, llm_info_status, gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+        yield full_display_history, llm_info_status, gr.update(visible=False), gr.update(visible=True), gr.update(
+            visible=True), gr.update(visible=True), gr.update(visible=False), gr.update(visible=True)
         full_response = ""
-        for ai_response_chunk in chat_interface_function("--- START NOW ---", api_key):
+        for ai_response_chunk in chat_interface_function("--- START NOW ---", api_key, tts_enabled):
             full_response = ai_response_chunk
             full_display_history[-1]["content"] = full_response
-            yield full_display_history, llm_info_status, gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+            yield full_display_history, llm_info_status, gr.update(visible=False), gr.update(visible=True), gr.update(
+                visible=True), gr.update(visible=True), gr.update(visible=False), gr.update(visible=True)
+
 
     # Function to handle message submission
-    def handle_submit(message_text: str, current_display_history: List[Dict[str, Any]], api_key: str):
+    """def handle_submit(message_text: str, current_display_history: List[Dict[str, Any]], api_key: str, tts_enabled):
         if not message_text.strip():
             # Only yield 7 outputs to match Gradio UI
             yield (
@@ -294,7 +339,8 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
                 gr.update(visible=True),  # msg_textbox
                 gr.update(visible=True),  # clear_button
                 gr.update(visible=True),  # submit_button
-                gr.update(visible=False)  # file_loader
+                gr.update(visible=False),  # file_loader
+                gr.update(visible=True),
             )
             return
         _app, llm_info_status = ensure_graph_initialized(api_key)
@@ -310,7 +356,8 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
                 gr.update(visible=True),  # msg_textbox
                 gr.update(visible=True),  # clear_button
                 gr.update(visible=True),  # submit_button
-                gr.update(visible=False)  # file_loader
+                gr.update(visible=False),  # file_loader
+                gr.update(visible=True),
             )
             return
         full_display_history[-1]["content"] = "..."
@@ -321,10 +368,11 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
             gr.update(visible=True),     # msg_textbox
             gr.update(visible=True),     # clear_button
             gr.update(visible=True),     # submit_button
-            gr.update(visible=False)     # file_loader
+            gr.update(visible=False),     # file_loader
+            gr.update(visible=True)
         )
         full_response = ""
-        for ai_response_chunk in chat_interface_function(message_text, api_key):
+        for ai_response_chunk in chat_interface_function(message_text, api_key, tts_enabled):
             full_response = ai_response_chunk
             full_display_history[-1]["content"] = full_response
             yield (
@@ -334,8 +382,77 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
                 gr.update(visible=True),     # msg_textbox
                 gr.update(visible=True),     # clear_button
                 gr.update(visible=True),     # submit_button
-                gr.update(visible=False)     # file_loader
+                gr.update(visible=False),     # file_loader
+                gr.update(visible=True),
+            )"""
+
+
+    def process_message(message_text: str, current_display_history: List[Dict[str, Any]], api_key: str, tts_enabled):
+        if not isinstance(current_display_history, list):
+            current_display_history = []
+
+        _app, llm_info_status = ensure_graph_initialized(api_key)
+
+        full_display_history = current_display_history + [{"role": "user", "content": message_text}]
+        full_display_history = full_display_history + [{"role": "assistant", "content": ""}]
+
+        if not _app:
+            full_display_history[-1][
+                "content"] = f"Failed to process: {llm_info_status.replace('LLM: ', '').replace('Error: ', '')}"
+            yield full_display_history, llm_info_status, False  # Not ready
+            return
+
+        full_display_history[-1]["content"] = "..."
+        yield full_display_history, llm_info_status, True  # Ready to respond
+
+        full_response = ""
+        for ai_response_chunk in chat_interface_function(message_text, api_key, tts_enabled):
+            full_response = ai_response_chunk
+            full_display_history[-1]["content"] = full_response
+            yield full_display_history, llm_info_status, True
+
+
+    def handle_submit(message_text: str, current_display_history: List[Dict[str, Any]], api_key: str, tts_enabled):
+        if not message_text.strip():
+            yield (
+                current_display_history,  # chatbot
+                CURRENT_LLM_INFO,  # llm_status_display
+                gr.update(visible=False),  # start_button
+                gr.update(visible=True),  # msg_textbox
+                gr.update(visible=True),  # clear_button
+                gr.update(visible=True),  # submit_button
+                gr.update(visible=False),  # file_loader
+                gr.update(visible=True),  # tts_output
             )
+            return
+
+        for step, (chat_history, llm_status, ready) in enumerate(
+                process_message(message_text, current_display_history, api_key, tts_enabled)):
+            if step == 0:
+                # First yield: setup
+                yield (
+                    chat_history,
+                    llm_status,
+                    gr.update(visible=False),  # start_button
+                    gr.update(visible=True),  # msg_textbox
+                    gr.update(visible=True),  # clear_button
+                    gr.update(visible=True),  # submit_button
+                    gr.update(visible=False),  # file_loader
+                    gr.update(visible=True),  # tts_output
+                )
+            else:
+                # Streaming responses
+                yield (
+                    chat_history,
+                    llm_status,
+                    gr.update(visible=False),
+                    gr.update(visible=True),
+                    gr.update(visible=True),
+                    gr.update(visible=True),
+                    gr.update(visible=False),
+                    gr.update(visible=True),
+                )
+
 
     # Function to clear chat and reset thread
     def clear_chat_and_reset_thread():
@@ -347,25 +464,79 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         CURRENT_LLM_INFO = new_llm_status
         print(f"Chat cleared. New thread: {CURRENT_THREAD_ID}. Graph will re-initialize on next interaction.")
         # Hide chat controls, show start button
-        return [], new_llm_status, gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)
+        return [], new_llm_status, gr.update(visible=True), gr.update(visible=False), gr.update(
+            visible=False), gr.update(visible=False), gr.update(visible=True)
+
+
+    def toggle_tts_state(current_value):
+        new_value = not current_value
+        label = "Mute" if new_value else "Speak"
+        return new_value, label
+
+
+    """def handle_audio(audio_tmp_path, current_display_history, api_key, tts_enabled):
+        if audio_tmp_path is None:
+            return "", gr.update()
+
+        # Save the temp audio to your hardcoded path
+        shutil.copy(audio_tmp_path, HARDCODED_AUDIO_PATH)
+
+        # Call your dummy STT function
+        # transcript = dummy_stt(HARDCODED_AUDIO_PATH)
+        transcript = transcribe_speech(stt_model, HARDCODED_AUDIO_PATH)
+        # Automatically populate the message box and submit
+        for out in handle_submit(transcript, current_display_history, api_key, tts_enabled):
+            # Append a reset for the audio box
+            yield *out, gr.update(value=None)"""
+
+
+    # Todo fix issue where automatic clearing off audio causes message to disappear
+    def handle_audio(audio_tmp_path, current_display_history, api_key, tts_enabled):
+        if audio_tmp_path is None:
+            yield current_display_history, "LLM: no input"  # , gr.update(value=None)
+            return
+
+        shutil.copy(audio_tmp_path, HARDCODED_AUDIO_PATH)
+        transcript = transcribe_speech(stt_model, HARDCODED_AUDIO_PATH)
+
+        for chat_history, llm_status, _ in process_message(transcript, current_display_history, api_key, tts_enabled):
+            yield chat_history, llm_status  # , gr.update(value=None)
+
+
+    tts_enabled = gr.State(value=False)
+
+    audio_box.change(
+        fn=handle_audio,
+        inputs=[audio_box, chatbot, api_key_textbox, tts_enabled],
+        outputs=[chatbot, llm_status_display]
+    )
+
+    toggle_tts.click(
+        toggle_tts_state,
+        inputs=[tts_enabled],
+        outputs=[tts_enabled, toggle_tts]
+    )
 
     # --- Button and event wiring ---
     start_button.click(
         fn=handle_start_story,
-        inputs=[chatbot, api_key_textbox],
-        outputs=[chatbot, llm_status_display, start_button, msg_textbox, clear_button, submit_button, file_loader],
+        inputs=[chatbot, api_key_textbox, tts_enabled],
+        outputs=[chatbot, llm_status_display, start_button, msg_textbox, clear_button, submit_button, file_loader,
+                 toggle_tts],
         show_progress=True
     )
     submit_button.click(
         fn=handle_submit,
-        inputs=[msg_textbox, chatbot, api_key_textbox],
-        outputs=[chatbot, llm_status_display, start_button, msg_textbox, clear_button, submit_button, file_loader],
+        inputs=[msg_textbox, chatbot, api_key_textbox, tts_enabled],
+        outputs=[chatbot, llm_status_display, start_button, msg_textbox, clear_button, submit_button, file_loader,
+                 toggle_tts],
         show_progress=True
     )
     msg_textbox.submit(
         fn=handle_submit,
-        inputs=[msg_textbox, chatbot, api_key_textbox],
-        outputs=[chatbot, llm_status_display, start_button, msg_textbox, clear_button, submit_button, file_loader],
+        inputs=[msg_textbox, chatbot, api_key_textbox, tts_enabled],
+        outputs=[chatbot, llm_status_display, start_button, msg_textbox, clear_button, submit_button, file_loader,
+                 toggle_tts],
         show_progress=True
     )
     msg_textbox.submit(lambda: gr.update(value=""), inputs=[], outputs=[msg_textbox])
@@ -376,18 +547,20 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         show_progress=True
     )
     file_loader.change(
-        fn=lambda file_obj, api_key: (gradio_load_file(file_obj, api_key), gr.update(visible=False), gr.update(visible=False), gr.update(visible=True), gr.update(visible=True), gr.update(visible=True), gr.update(visible=False)),
+        fn=lambda file_obj, api_key: (
+        gradio_load_file(file_obj, api_key), gr.update(visible=False), gr.update(visible=False),
+        gr.update(visible=True), gr.update(visible=True), gr.update(visible=True), gr.update(visible=False)),
         inputs=[file_loader, api_key_textbox],
         outputs=[chatbot, llm_status_display, start_button, msg_textbox, clear_button, submit_button, file_loader],
         show_progress=True
     )
-
 
 # --- Main Execution ---
 if __name__ == "__main__":
     # Load environment variables if using python-dotenv
     try:
         from dotenv import load_dotenv
+
         load_dotenv()
         print("Attempting to load .env file for API keys (if configured via python-dotenv).")
     except ImportError:
