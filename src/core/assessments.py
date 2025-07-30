@@ -1,5 +1,6 @@
 from enum import Enum
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from typing import List, Optional, ClassVar, Dict, Type
 
 from pydantic import BaseModel, Field
@@ -27,12 +28,18 @@ class BaseAssessmentEvalSchema(BaseModel):
 
 
 
+class BaseAssessmentErrorAnalysisSchema(BaseModel):
+    """The Pydantic schema for a TILLS subtask's error pattern analysis"""
+    pass
+
+
 class BaseAssessmentSubtask(ABC):
     _registry: ClassVar[Dict[str, Type["BaseAssessmentSubtask"]]] = {}
 
     type_key: str
     extraction_schema: Type["BaseAssessmentExtractSchema"]
     evaluation_schema: Type["BaseAssessmentEvalSchema"]
+    error_analysis_schema: Type["BaseAssessmentErrorAnalysisSchema"]
 
     max_item_score: int
 
@@ -56,6 +63,22 @@ class BaseAssessmentSubtask(ABC):
 
         Returns:
             formatted_extraction_input (str): Student response formatted for the extraction prompt
+        """
+
+        raise NotImplementedError
+
+
+    @abstractmethod
+    def filter_extracted_answers(self, structured_student_response: Type["BaseAssessmentExtractSchema"], raw_student_response: Dict[str, any]) -> Type["BaseAssessmentExtractSchema"]:
+        """
+        Filters the extracted student answers to ensure only correct responses are present.
+
+        Args:
+            raw_student_response (Dict): Student's raw response to the given subtask challenge item
+            structured_student_response (BaseAssessmentExtractSchema): Student answers to the given subtask challenge item
+
+        Returns:
+            filtered_student_response (BaseAssessmentExtractSchema): Filtered student answers to the given subtask challenge item
         """
 
         raise NotImplementedError
@@ -136,11 +159,34 @@ class VAItemScoreEnum(int, Enum):
 
 
 
+class VAErrorCategoryEnum(str, Enum):
+    semantic_mismatch = "semantic_mismatch"
+    justification_vague = "justification_vague"
+    off_topic = "off_topic"
+    incomplete = "incomplete"
+    other = "other"
+    none = "none"
+
+
+
 class VAPairingList(BaseAssessmentExtractSchema):
     pairings: List[Pairing] = Field(
-        description="List of word pairs with their associated justification for a specific triplet."
+        max_length=2,
+        description="List of 1 or 2 word pairs with their associated justification for a specific triplet."
     )
 
+
+
+class VAErrorAnalysis(BaseAssessmentErrorAnalysisSchema):
+    category: VAErrorCategoryEnum = Field(
+        default="None",
+        description="A short tag indicating the most likely error category in the student's incorrect response."
+    )
+
+    category_reasoning: str = Field(
+        default="No incorrect response to analyze.",
+        description="A brief explanation justifying why this error category was chosen."
+    )
 
 
 
@@ -159,6 +205,10 @@ class VAPairingEvaluation(BaseModel):
 
     score: ItemScoreEnum = Field(
         description="Numerical score for this response: 1 = correct, if both word pair AND justification are correct; 0 = incorrect, if word pair and/or justification is incorrect."
+    )
+
+    error_analysis: VAErrorAnalysis = Field(
+        description="Error tagging and reasoning for incorrect responses. Resorts to default values if the response is correct."
     )
 
 
@@ -203,6 +253,34 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
 
 
 
+    def filter_extracted_answers(self, structured_student_response, raw_student_response):
+
+        ranked = []
+        pair_dict = defaultdict(list)
+        student_text = raw_student_response.lower()
+
+        for pair in structured_student_response.pairings:
+            key = tuple(sorted(pair.words))
+            pair_dict[key].append(pair)
+
+
+        for key, candidates in pair_dict.items():
+            best = max(
+                candidates,
+                key=lambda p: (
+                    2 if p.justification.strip().lower() in student_text else 0
+                    + sum(word in student_text for word in p.justification.strip().lower().split())
+                )
+            )
+
+            ranked.append(best)
+
+
+        return VAPairingList(pairings=ranked[:2])
+
+                         
+
+
     def format_evaluation_input(self, structured_student_response, challenge_item):
 
         # Ensure that challenge_item is of type ChallengeTriplet
@@ -221,7 +299,7 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
             for pair in challenge_item.pairings
         )
 
-        return (
+        return None if student_lines == "" else (
             f"Triplet: {triplet_line}\n\n"
             f"Student Response: {student_lines}\n\n"
             f"Expected Response: {expected_lines}"

@@ -7,7 +7,6 @@ from core.challenges import BaseChallenge, Pairing, ChallengeTriplet
 from core.assessments import BaseAssessmentSubtask, BaseAssessmentExtractSchema, BaseAssessmentEvalSchema
 
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
 
 class AssessmentAgent(BaseAgent):
@@ -23,7 +22,7 @@ class AssessmentAgent(BaseAgent):
         self.state: AssessmentState = {
             "basal": False,
             "ceiling": False,
-            "assessment_summary": {},
+            "score_summary": {},
             "assessment_history": []
         }
 
@@ -41,7 +40,7 @@ class AssessmentAgent(BaseAgent):
         """
 
 
-
+    
     def __call__(self, fullstate: FullState) -> FullState:
         """
         Main callable interface for the Assessment Agent.
@@ -52,8 +51,8 @@ class AssessmentAgent(BaseAgent):
                                 and other agent context.
 
         Returns:
-            updated_state (FullState): The updated state including evaluation results, score for the
-            current item, and updated flags (e.g., basal, response mode).
+            fullstate (FullState): The updated state including evaluation results, score for the
+                                    current item, and updated flags (e.g., basal, response mode).
         """
 
         challenge_index = fullstate.narrative.challenge_index
@@ -109,11 +108,18 @@ class AssessmentAgent(BaseAgent):
             raw_student_response (str): Transcription of the student's raw response to the given challenge.
 
         Returns:
-            extracted_student_answers (BaseAssessmentExtractSchema): Student's answers to the current challenge
+            extracted_student_answer (BaseAssessmentExtractSchema): Student's answers to the current challenge
 
         """
 
         formatted_input = subtask_handler.format_extraction_input(raw_student_response)
+
+        if formatted_input == "":
+            return subtask_handler.error_analysis_schema(
+                error_category = "none",
+                category_reasoning = "No incorrect responses to analyze."
+            )
+        
 
         extraction_prompt_str = self.prompt_template.format(
             subtask_description = ASSESSMENT_PROMPTS[subtask_handler.type_key]["description"],
@@ -124,7 +130,10 @@ class AssessmentAgent(BaseAgent):
         extraction_structured_llm = self.model.with_structured_output(subtask_handler.extraction_schema)
         extracted_student_answer = extraction_structured_llm.invoke(extraction_prompt_str)
 
+        extracted_student_answer = subtask_handler.filter_extracted_answers(extracted_student_answer, raw_student_response)
+
         return extracted_student_answer
+
 
 
     def evaluate_student_answers(self, subtask_handler: BaseAssessmentSubtask, extracted_student_answers: BaseAssessmentExtractSchema, challenge_item: BaseChallenge) -> BaseAssessmentEvalSchema:
@@ -137,7 +146,7 @@ class AssessmentAgent(BaseAgent):
             challenge_item (BaseChallenge): The ground-truth challenge data for the current subtask item
 
         Returns:
-            evaluated_student_answers (BaseAssessmentEvalSchema): List of evaluations for each pairing
+            evaluated_student_answers (BaseAssessmentEvalSchema): List of evaluations for each challenge item
         """
 
         formatted_input = subtask_handler.format_evaluation_input(extracted_student_answers, challenge_item)
@@ -156,7 +165,7 @@ class AssessmentAgent(BaseAgent):
 
         return evaluated_student_answers
 
-
+    
 
     def check_basal_rule(self, subtask_handler: BaseAssessmentSubtask):
         """
@@ -198,14 +207,14 @@ class AssessmentAgent(BaseAgent):
             subtask_handler (BaseAssessmentSubtask): The handler for the current subtask.
         """
 
-        if subtask_handler.type_key not in self.state["assessment_summary"]:
-            self.state["assessment_summary"][subtask_handler.type_key] = {
+        if subtask_handler.type_key not in self.state["score_summary"]:
+            self.state["score_summary"][subtask_handler.type_key] = {
                 "total_items": 0,
                 "total_score": 0,
                 "average_score": 0.0
             }
 
-        summary = self.state["assessment_summary"][subtask_handler.type_key]
+        summary = self.state["score_summary"][subtask_handler.type_key]
 
         summary["total_items"] += 1
         summary["total_score"] += self.item_total_scores[-1]
@@ -216,12 +225,13 @@ class AssessmentAgent(BaseAgent):
         self.state.update({
             "basal": self.basal_move_backwards,
             "ceiling": self.ceiling_stop_subtask,
-            "assessment_summary": summary,
+            "score_summary": summary,
             "assessment_history": self.state["assessment_history"] + [evaluated_student_answers]
         })
 
        
         # Todo: store in memory
+
 
 
     def reset(self):
@@ -237,7 +247,7 @@ class AssessmentAgent(BaseAgent):
         self.state: AssessmentState = {
             "basal": False,
             "ceiling": False,
-            "assessment_summary": {},
+            "score_summary": {},
             "assessment_history": []
         }
 
@@ -297,11 +307,15 @@ def pretty_print_assessment_state(assessment_state):
         for j, eval in enumerate(response.evaluations):
             pair = eval.evaluated_pairing.words
             justification = eval.evaluated_pairing.justification
+            error = eval.error_analysis.category
+            error_reason = eval.error_analysis.category_reasoning
             print(f"  Pair {j + 1}: {pair}")
             print(f"    Justification: \"{justification}\"")
             print(f"    Pair Valid: {eval.pair_is_valid}")
             print(f"    Justification Valid: {eval.justification_is_valid}")
             print(f"    Score: {eval.score.value}")
+            print(f"    Error Category: {error.value}")
+            print(f"    Error Category Reasoning: {error_reason}")
         print(f"  Total Score: {response.total_score.value}")
 
 def test_assessment_agent():
@@ -329,13 +343,14 @@ def test_assessment_agent():
                 Pairing(words=("dog", "cat"), justification="both are common pets"),
                 Pairing(words=("dog", "bone"), justification="dogs like bones")
             ]
-        )
+        ),
+
     ]
 
     responses = [
         "pen and paper because you write with a pen, and pen and pig because pigs live in pens.",
         "sun and light because the sun makes light, and sun and moon because they're both in the sky.",
-        "cat and bone because cats chew bones, and cat and dog because they are animals."
+        "cat and bone because cats chew bones, and cat and dog because they are animals.",
     ]
 
     full_state = FullState()
