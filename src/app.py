@@ -115,7 +115,7 @@ LANG_GRAPH_APP: Optional[Any] = None
 CURRENT_LLM_INFO: str = "LLM: Not yet determined. Press 'Let's start!' or send a message."
 CURRENT_THREAD_ID: str = generate_thread_id(prefix="chat")
 PREVIOUS_API_KEY_USED: Optional[str] = None
-tts_model = get_tts_model('tts_models/en/ljspeech/tacotron2-DDC')
+tts_model = get_tts_model("tts_models/en/jenny/jenny")
 stt_model = get_stt_model('tiny')
 
 
@@ -279,9 +279,6 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
 
     audio_box = gr.Audio(sources=['microphone'], label='Record',
                          type='filepath', waveform_options=gr.WaveformOptions(waveform_color="#B83A4B"), )
-    """with gr.Row():
-        audio_btn = gr.Button('Speak')
-        clear = gr.Button("Clear")"""
 
     HARDCODED_AUDIO_PATH = "latest_recording.wav"
 
@@ -473,34 +470,16 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         label = "Mute" if new_value else "Speak"
         return new_value, label
 
-
-    """def handle_audio(audio_tmp_path, current_display_history, api_key, tts_enabled):
-        if audio_tmp_path is None:
-            return "", gr.update()
-
-        # Save the temp audio to your hardcoded path
-        shutil.copy(audio_tmp_path, HARDCODED_AUDIO_PATH)
-
-        # Call your dummy STT function
-        # transcript = dummy_stt(HARDCODED_AUDIO_PATH)
-        transcript = transcribe_speech(stt_model, HARDCODED_AUDIO_PATH)
-        # Automatically populate the message box and submit
-        for out in handle_submit(transcript, current_display_history, api_key, tts_enabled):
-            # Append a reset for the audio box
-            yield *out, gr.update(value=None)"""
-
-
-    # Todo fix issue where automatic clearing off audio causes message to disappear
     def handle_audio(audio_tmp_path, current_display_history, api_key, tts_enabled):
         if audio_tmp_path is None:
-            yield current_display_history, "LLM: no input"  # , gr.update(value=None)
+            yield current_display_history, "LLM: no input"
             return
 
         shutil.copy(audio_tmp_path, HARDCODED_AUDIO_PATH)
         transcript = transcribe_speech(stt_model, HARDCODED_AUDIO_PATH)
 
         for chat_history, llm_status, _ in process_message(transcript, current_display_history, api_key, tts_enabled):
-            yield chat_history, llm_status  # , gr.update(value=None)
+            yield chat_history, llm_status
 
 
     tts_enabled = gr.State(value=False)
@@ -509,7 +488,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         fn=handle_audio,
         inputs=[audio_box, chatbot, api_key_textbox, tts_enabled],
         outputs=[chatbot, llm_status_display]
-    )
+    ).then(lambda: None, None, audio_box, queue=False)
 
     toggle_tts.click(
         toggle_tts_state,
@@ -548,8 +527,8 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
     )
     file_loader.change(
         fn=lambda file_obj, api_key: (
-        gradio_load_file(file_obj, api_key), gr.update(visible=False), gr.update(visible=False),
-        gr.update(visible=True), gr.update(visible=True), gr.update(visible=True), gr.update(visible=False)),
+            gradio_load_file(file_obj, api_key), gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=True), gr.update(visible=True), gr.update(visible=True), gr.update(visible=False)),
         inputs=[file_loader, api_key_textbox],
         outputs=[chatbot, llm_status_display, start_button, msg_textbox, clear_button, submit_button, file_loader],
         show_progress=True
