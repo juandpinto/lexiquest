@@ -1,3 +1,8 @@
+import csv
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 from enum import Enum
 from abc import ABC, abstractmethod
 from collections import defaultdict
@@ -10,26 +15,26 @@ from core.challenges import ChallengeTriplet, Pairing, BaseChallenge
 
 
 
-class ItemScoreEnum(int, Enum):
-    incorrect = 0
-    correct = 1
+class ItemScoreEnum(str, Enum):
+    incorrect = "0"
+    correct = "1"
 
 
 
 class BaseAssessmentExtractSchema(BaseModel):
-    """The Pydantic schema for a TILLS subtask's extracted response"""
+    """The Pydantic schema for a subtask's extracted response"""
     pass
 
 
 
 class BaseAssessmentEvalSchema(BaseModel):
-    """The Pydantic schema for a TILLS subtask's evaluated response"""
+    """The Pydantic schema for a subtask's evaluated response"""
     pass
 
 
 
 class BaseAssessmentErrorAnalysisSchema(BaseModel):
-    """The Pydantic schema for a TILLS subtask's error pattern analysis"""
+    """The Pydantic schema for a subtask's error pattern analysis"""
     pass
 
 
@@ -143,6 +148,19 @@ class BaseAssessmentSubtask(ABC):
         """
 
         raise NotImplementedError
+    
+
+    @abstractmethod
+    def export_to_csv_and_plots(self, assessment_history: list[Type["BaseAssessmentEvalSchema"]], score_summary: Dict[str, any]):
+        """
+        Exports the current assessment history and score summary to various plots and CSV files.
+
+        Args:
+            assessment_history (list): The history of evaluated student answers
+            score_summary (dict): Summary of the current challenge assessment scores
+        """
+
+        raise NotImplementedError
 
 
 
@@ -152,10 +170,10 @@ class BaseAssessmentSubtask(ABC):
 ############ SUBTASK 1: Vocabulary Awareness ############
 
 
-class VAItemScoreEnum(int, Enum):
-    zero = 0
-    one = 1
-    two = 2
+class VAItemScoreEnum(str, Enum):
+    zero = "0"
+    one = "1"
+    two = "2"
 
 
 
@@ -232,8 +250,8 @@ class VAItemEvaluation(BaseAssessmentEvalSchema):
         # TODO: Incorporate a way for the narrative agent to encourage the student to make 2 pairs if only one is made.
         # assert len(self.evaluations) == 2, f"Expected 2 pairings, got {len(self.evaluations)}.\n"
 
-        total = sum(eval.score.value for eval in self.evaluations)
-        self.total_score = VAItemScoreEnum(total)
+        total = sum(int(eval.score.value) for eval in self.evaluations)
+        self.total_score = VAItemScoreEnum(str(total))
 
 
 
@@ -315,18 +333,96 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
 
 
     def check_basal_rule(self, scores):
-        """
-        TILLS Basal Rule for subtask 1: Four consecutive scores of 2 (both parts of each item must be correct)
-        """
-
         return scores[-1] < 2 if len(scores) < 4 else False
 
 
 
     def check_ceiling_rule(self, scores):
-        """
-        TILLS Ceiling Rule for subtask 1: Six scores of 0 within a sequence of eight consecutive items
-                            (both parts of each item must be incorrect on 6 out of 8 items)
-        """
-
         return scores[-8:].count(0) >= 6 if len(scores) >= 8 else False
+    
+
+
+    def export_to_csv_and_plots(self, assessment_history, score_summary, dir="src/agents/outputs/"):
+
+        # Export to CSV
+
+        history_filename = dir + "VA_assessment_history.csv"
+
+        with open(history_filename, 'w', newline="") as file:
+            writer = csv.writer(file, quoting=csv.QUOTE_ALL)
+            writer.writerow(
+                [
+                    "Item", "Pair", "Justification", "Pair Valid", "Justification Valid", "Score", "Error Category", "Error Reasoning"
+                ]
+            )
+
+            for i, response in enumerate(assessment_history):
+                for eval in response.evaluations:
+                    writer.writerow(
+                        [
+                            i + 1,
+                            " & ".join(eval.evaluated_pairing.words),
+                            eval.evaluated_pairing.justification,
+                            eval.pair_is_valid,
+                            eval.justification_is_valid,
+                            eval.score.value,
+                            eval.error_analysis.category.value,
+                            eval.error_analysis.category_reasoning
+                        ]
+                    )
+
+        
+
+        score_filename = dir + "score_summary.csv"
+
+        with open(score_filename, 'w', newline="") as file:
+            writer = csv.writer(file, quoting=csv.QUOTE_ALL)
+            writer.writerow(
+                [
+                    "Subtask", "Total Items", "Total Score", "Average Score"
+                ]
+            )
+
+            writer.writerow(
+                [
+                    "Vocabulary Awareness", score_summary["total_items"], score_summary["total_score"], score_summary["normalized_average"]
+                ]
+            )
+
+
+        
+        # Plot the heatmap
+
+        num_items = len(assessment_history)
+        heatmap_data = np.full((num_items, 2), np.nan)
+
+        heatmap_filename = dir + "per_pair_score_heatmap.png"
+
+        for i, response in enumerate(assessment_history):
+            for j, eval in enumerate(response.evaluations):
+                heatmap_data[i, j] = eval.score.value
+
+        cmap = sns.color_palette(["lightcoral", "lightgray", "mediumseagreen"])  # 0, NaN, 1
+        bounds = [-0.5, 0.1, 0.9, 1.5]
+        norm = plt.matplotlib.colors.BoundaryNorm(bounds, len(cmap))
+
+        plt.figure(figsize=(6, num_items * 0.6))
+        sns.heatmap(
+            heatmap_data,
+            annot=True,
+            fmt=".0f",
+            linewidths=0.5,
+            cmap=cmap,
+            norm=norm,
+            cbar=False,
+            xticklabels=["Pair 1", "Pair 2"],
+            yticklabels=[f"{i+1}" for i in range(num_items)]
+        )
+
+        plt.title("VA Per-Pair Accuracy Heatmap")
+        plt.xlabel("Pair Index")
+        plt.ylabel("Item")
+        plt.tight_layout()
+
+        plt.savefig(heatmap_filename, dpi=300)
+        plt.close()

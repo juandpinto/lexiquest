@@ -6,7 +6,7 @@ ASSESSMENT_PROMPTS = {
                         choose 2 words that go together and justify their choice. For each triplet, the student must 
                         provide 2 pairs with justifications for each.
 
-                        ### Examples:
+                        Examples:
                         dog-cat-bone: (dog, cat), because they are both animals
                                     (dog, bone), because dogs like bones
 
@@ -27,9 +27,6 @@ ASSESSMENT_PROMPTS = {
 
                         Important: if a pair is not explicitly stated, do not include it.
 
-
-                        ---
-
                         Example:
 
                         Student: "cat and bone because cats chew bones, and cat and dog because they are animals."
@@ -45,58 +42,51 @@ ASSESSMENT_PROMPTS = {
 
 
         "evaluation": """
-                        You are an expert educational evaluator assessing a child's responses to Vocabulary Awareness (VA) challenges.
+                        You are evaluating a child's Vocabulary Awareness (VA) response.
+                        Each item gives a triplet (e.g., "light, sun, feather"). The child selects 2 word pairs and gives a justification for each.
 
-                        Each challenge presents a triplet of words (e.g., "dog, cat, bone"). The student is asked to choose two word pairs and provide a justification for each.
+                        Your task:
+                        1. Evaluate if each word pair and justification are valid.
+                        2. Score: 1 = both pair and justification are valid; 0 = otherwise.
+                        3. If score is 0, assign an error category and a short explanation.
+                        4. Compute total score (max = 2).
 
-                        Your task is to:
-                        1. Evaluate the correctness of each pair and its justification.
-                        2. Score each pair: 1 if both the word pair and justification are valid; 0 otherwise.
-                        3. For any incorrect response, classify the type of error.
-                        4. Compute the total score
+                        Error categories:
+                        - semantic_mismatch: the words aren’t meaningfully related.
+                        - justification_vague: explanation is too vague or generic.
+                        - off_topic: the response is unrelated to the task or triplet.
+                        - incomplete: fewer than 2 pairs or missing justification.
+                        - other: doesn’t fit above.
 
-                        ### Error categories:
-                        - semantic_mismatch: the selected word pair does not share a valid or meaningful relationship.
-                        - justification_vague: the explanation is unclear.
-                        - off_topic: the response doesn’t relate to the triplet or task at all.
-                        - incomplete: the student provided fewer than two pairs or left parts blank.
-                        - other: use only if none of the above apply.
+                        Be strict:
+                        - Only accept pairs with clear, commonly understood semantic relationships.
+                        - Reject guesses, puns, or surface-level links.
+                        - If the justification sounds okay but the words don’t belong together, mark as invalid.
 
-                        Be strict. Only mark the pair and justification as valid if:
-                        - The two words have a strong, commonly understood semantic relationship.
-                        - The justification is clear, precise, and correct.
-                        Do not accept guesses, unusual logic, or surface-level associations.
+                        Example:
 
-                        If the justification seems plausible but the word pair is unrelated or based on a pun or homonym, mark it as invalid.
-                        Do not let surface-level similarity override actual meaning.
+                        Triplet: (light, sun, feather)  
+                        Expected Pairs:  
+                        - (light, sun): because the sun gives off light  
+                        - (light, feather): because a feather is light / not heavy
 
-                        ---
-
-                        ### Example:
-
-                        Triplet: (dog, cat, bone)
-                        Expected Pairs: dog, cat; dog, bone 
-
-                        # Student Pair 1:
-                        Words: dog, cat  
-                        Justification: both are animals
+                        Student Pair 1:  
+                        Words: light, sun  
+                        Justification: the sun produces light  
                         Pair valid: yes  
                         Justification valid: yes  
-                        Score: 1
-                        Error Category: None  
-                        Error Reasoning: The pair and justification are both valid
+                        Score: 1  
+                        Error Category: none  
+                        Error Reasoning: Clear and accurate semantic link.
 
-                        ---
-
-                        # Student Pair 2:
-                        Words: cat, bone  
-                        Justification: cats chew bones 
+                        Student Pair 2:  
+                        Words: sun, feather  
+                        Justification: both are light  
                         Pair valid: no  
                         Justification valid: no  
-                        Score: 0
+                        Score: 0  
                         Error Category: semantic_mismatch  
-                        Error Reasoning: The words cat and bone are not semantically related in the intended way
-
+                        Error Reasoning: “Light” has different meanings here; this pair lacks a valid semantic relationship.
                     """,
     },
 }

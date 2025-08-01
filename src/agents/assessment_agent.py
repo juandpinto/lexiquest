@@ -1,4 +1,9 @@
+import os
+
 from langchain_ollama import ChatOllama
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+from pydantic import BaseModel
 
 from utils import BaseAgent
 from prompts import ASSESSMENT_PROMPTS
@@ -44,7 +49,7 @@ class AssessmentAgent(BaseAgent):
     def __call__(self, fullstate: FullState) -> FullState:
         """
         Main callable interface for the Assessment Agent.
-        Evaluates student response to a TILLS subtask challenge.
+        Evaluates student response to a subtask challenge.
 
         Args:
             state (FullState): The current state dictionary containing student response, expected answer, scoring history,
@@ -57,7 +62,7 @@ class AssessmentAgent(BaseAgent):
 
         challenge_index = fullstate.narrative.challenge_index
 
-        subtask_key = fullstate.challenge.challenge_type # e.g Vocabulary Awareness
+        subtask_key = fullstate.challenge.challenge_type 
         subtask_handler = self.get_subtask(subtask_key)
 
         raw_student_response = fullstate.student_response
@@ -84,7 +89,7 @@ class AssessmentAgent(BaseAgent):
 
     def get_subtask(self, subtask_key: str) -> BaseAssessmentSubtask:
         """
-        Retrives a handler for the current TILLS subtask.
+        Retrives a handler for the current subtask.
 
         Args:
             subtask_key (str): Unique identifier of the subtask
@@ -113,13 +118,6 @@ class AssessmentAgent(BaseAgent):
         """
 
         formatted_input = subtask_handler.format_extraction_input(raw_student_response)
-
-        if formatted_input == "":
-            return subtask_handler.error_analysis_schema(
-                error_category = "none",
-                category_reasoning = "No incorrect responses to analyze."
-            )
-        
 
         extraction_prompt_str = self.prompt_template.format(
             subtask_description = ASSESSMENT_PROMPTS[subtask_handler.type_key]["description"],
@@ -208,13 +206,13 @@ class AssessmentAgent(BaseAgent):
         """
 
         if subtask_handler.type_key not in self.state["score_summary"]:
-            self.state["score_summary"][subtask_handler.type_key] = {
+            self.state["score_summary"] = {
                 "total_items": 0,
                 "total_score": 0,
                 "average_score": 0.0
             }
 
-        summary = self.state["score_summary"][subtask_handler.type_key]
+        summary = self.state["score_summary"]
 
         summary["total_items"] += 1
         summary["total_score"] += self.item_total_scores[-1]
@@ -228,6 +226,10 @@ class AssessmentAgent(BaseAgent):
             "score_summary": summary,
             "assessment_history": self.state["assessment_history"] + [evaluated_student_answers]
         })
+
+
+        # TODO: save for each user, prevent file overwrite
+        subtask_handler.export_to_csv_and_plots(self.state["assessment_history"], self.state["score_summary"])
 
        
         # Todo: store in memory
@@ -319,7 +321,9 @@ def pretty_print_assessment_state(assessment_state):
         print(f"  Total Score: {response.total_score.value}")
 
 def test_assessment_agent():
-    llm = ChatOllama(model="gemma3", temperature=0.8)
+    # llm = ChatOllama(model="gemma3", temperature=0.8)
+    api_key = os.getenv("GOOGLE_API_KEY")
+    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key, temperature=0.8)
     agent = AssessmentAgent(model=llm)
 
     challenges = [
