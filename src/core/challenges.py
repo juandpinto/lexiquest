@@ -17,6 +17,7 @@ class BaseChallenge(BaseModel):
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "BaseChallenge":
         type_key = data.get("challenge_type")
+        type_key = 'triplet' if type_key == 'Vocabulary Awareness' else type_key
         if type_key not in cls._registry:
             raise ValueError(f"Unknown challenge type: {type_key}")
         return cls._registry[type_key](**data)
@@ -97,8 +98,8 @@ class InferentialVocabulary(BaseChallenge):
 
 
 class ChallengeTriplet(BaseChallenge):
-    type_key: str = "Vocabulary Awareness"
-    challenge_type: str = "Vocabulary Awareness"
+    type_key: str = "triplet"
+    challenge_type: str = "triplet"
 
     triplet: List[str] = Field(description="List of three words for association")
     pairings: List[Pairing] = Field(description="List of pairings with their associated definitions")
