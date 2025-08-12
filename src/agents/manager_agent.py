@@ -1,30 +1,11 @@
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from pydantic import BaseModel
-from typing import Any, Dict
 from .utils import BaseAgent
 from core.states import FullState
 from pprint import pprint
+from .prompts import MANAGER_PROMPT
 
-# Manager agent system prompt
-MANAGER_PROMPT = """
-You are a manager managing the following agents:
 
-- "narrative_agent": Assign narrative-related tasks to this agent.
-- "challenge_agent": Assign challenge-related tasks to this agent.
-
-Assign work to one agent at a time, do not call agents in parallel.
-
-The user will initiate the conversation with "--- START NOW ---", after which you should refer to the narrative agent for the first part of the story. Make sure the challenge_agent is called every few turns.
-
-Your response MUST be a JSON object with two keys:
-- "next_agent": either "narrative_agent" or "challenge_agent"
-- "task": a string describing the task to assign
-
-DO NOT include any other text or formatting, ONLY return the JSON object.
-
-Example:
-{"next_agent": "narrative_agent", "task": "Continue the story"}
-"""
 
 # Define the structured output schema for manager decisions
 class ManagerDecision(BaseModel):
@@ -34,7 +15,9 @@ class ManagerDecision(BaseModel):
 
 class ManagerAgent(BaseAgent):
     def __init__(self, model):
-        # Wrap the model with structured output enforcement
+        """
+        Initialize ManagerAgent with structured output enforcement and prompt.
+        """
         structured_model = model.with_structured_output(ManagerDecision)
         super().__init__(name='Manager Agent')
         self.model = structured_model
@@ -42,9 +25,7 @@ class ManagerAgent(BaseAgent):
 
     def __call__(self, state: FullState) -> FullState:
         """
-        Manage agents, assigning tasks.
-
-        Accepts and returns the global FullState, updating only the relevant namespaces.
+        Manage agents, assigning tasks. Accepts and returns the global FullState, updating only the relevant namespaces.
         """
         print("\n--- Running Manager Agent ---")
 
@@ -75,7 +56,7 @@ class ManagerAgent(BaseAgent):
 
     def handle_challenge_flow(self, state: FullState):
         """
-        Handles the logic for distributing challenge triplets to the narrative agent and collecting responses.
+        Handles challenge flow logic: distributing challenges, collecting responses, and routing to assessment.
         Returns a decision dict if handling a challenge, else None, along with the updated state.
         """
         challenge_history = getattr(state.challenge, 'challenge_history', [])
@@ -119,10 +100,11 @@ class ManagerAgent(BaseAgent):
         else:
             print("No valid student response found in the last message.")
             state.student_response = None
-        state.narrative.user_responses.append({
-            "triplet": prev_challenge,
-            "response": state.student_response
-        })
+        # Alternative approach for assessment agent
+        # state.narrative.user_responses.append({
+        #     "triplet": prev_challenge,
+        #     "response": state.student_response
+        # })
 
         print(f"\n\n[Manager] User responses: {state.narrative.user_responses}\n")
 
@@ -136,8 +118,8 @@ class ManagerAgent(BaseAgent):
         Use the model to decide the next agent and task.
         Returns a dict: {"next_agent": ..., "task": ...}
         """
-        narrative_summary = "\n".join([msg.content for msg in state.narrative.story[-3:]])
-        user_message = state.narrative.story[-1].content if state.narrative.story else "Let's start!"
+        # narrative_summary = "\n".join([msg.content for msg in state.narrative.story[-3:]])
+        # user_message = state.narrative.story[-1].content if state.narrative.story else "Let's start!"
 
         response = self.model.invoke([SystemMessage(content=self.prompt)] + state.full_history)
         print(f"\n[Manager] Raw manager response:\n{response}\n")
