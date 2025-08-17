@@ -1,3 +1,4 @@
+import os
 import csv
 import numpy as np
 import seaborn as sns
@@ -344,7 +345,7 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
 
     def export_to_csv_and_plots(self, assessment_history, score_summary, dir="src/agents/outputs/"):
 
-        # Export to CSV
+        os.makedirs(dir, exist_ok=True)
 
         history_filename = dir + "VA_assessment_history.csv"
 
@@ -391,7 +392,7 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
 
 
         
-        # Plot the heatmap
+       
 
         num_items = len(assessment_history)
         heatmap_data = np.full((num_items, 2), np.nan)

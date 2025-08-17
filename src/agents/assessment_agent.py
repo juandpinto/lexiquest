@@ -1,4 +1,5 @@
 import os
+import json
 
 from langchain_ollama import ChatOllama
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -42,6 +43,12 @@ class AssessmentAgent(BaseAgent):
 
             Input:
             {input}
+
+            Use the following **JSON schema** for output (do not include anything other than the JSON):
+
+            ```json
+            {schema}
+            ```
         """
 
 
@@ -122,7 +129,8 @@ class AssessmentAgent(BaseAgent):
         extraction_prompt_str = self.prompt_template.format(
             subtask_description = ASSESSMENT_PROMPTS[subtask_handler.type_key]["description"],
             subtask_instructions = ASSESSMENT_PROMPTS[subtask_handler.type_key]["extraction"],
-            input = formatted_input
+            input = formatted_input,
+            schema = self.get_schema_block(subtask_handler, "extraction")
         )
 
         extraction_structured_llm = self.model.with_structured_output(subtask_handler.extraction_schema)
@@ -152,7 +160,8 @@ class AssessmentAgent(BaseAgent):
         eval_prompt_str = self.prompt_template.format(
             subtask_description = ASSESSMENT_PROMPTS[subtask_handler.type_key]["description"],
             subtask_instructions = ASSESSMENT_PROMPTS[subtask_handler.type_key]["evaluation"],
-            input = formatted_input
+            input = formatted_input,
+            schema = self.get_schema_block(subtask_handler, "extraction")
         )
 
         eval_structured_llm = self.model.with_structured_output(subtask_handler.evaluation_schema)
@@ -274,6 +283,27 @@ class AssessmentAgent(BaseAgent):
 
 
 
+    def get_schema_block(self, subtask_handler: BaseAssessmentSubtask, task: str):
+        """
+        Retrieves the required Pydantic schema and converts to json.
+
+        Args:
+            subtask_handler (BaseAssessmentSubtask): The handler for the current subtask.
+
+        Returns:
+            schema (json): The Pydantic schema in json format.
+        """
+
+        if task == "extraction":
+            schema = subtask_handler.extraction_schema.model_json_schema()
+
+        elif task == "evaluation":
+            schema = subtask_handler.evaluation_schema.model_json_schema()
+
+        return json.dumps(schema, separators=(",", ":"))
+
+
+
     def analyze_behavioral_indicators(self):
         """
         Method to analyze student's response for SLD behavioral indicators.
@@ -321,9 +351,9 @@ def pretty_print_assessment_state(assessment_state):
         print(f"  Total Score: {response.total_score.value}")
 
 def test_assessment_agent():
-    # llm = ChatOllama(model="gemma3", temperature=0.8)
-    api_key = os.getenv("GOOGLE_API_KEY")
-    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key, temperature=0.8)
+    llm = ChatOllama(model="gemma3", temperature=0.8)
+    # api_key = os.getenv("GOOGLE_API_KEY")
+    # llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key, temperature=0.8)
     agent = AssessmentAgent(model=llm)
 
     challenges = [
