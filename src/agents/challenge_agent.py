@@ -8,9 +8,9 @@ from core.challenges import BaseChallenge
 from langchain_core.messages import AIMessage
 
 SUBTASK1_INSTRUCTION_PROMPT = """
-Subtest 1 is concerned with evaluating a students Vocabulary Awareness (VA). The test consists of presenting a student with a set of
-3 words (e.g. dog-cat-bone) and asking them "Tell me two words that go together" and then ask for their justification. For each set, students must come up
-with 2 pairings along with their associated justifications. Students are allowed repeated attempts at any given item.
+Subtest 1 evaluates a student’s Vocabulary Awareness (VA). The task is to present a student with a triplet of three words, where two different pairs of words in the triplet can be logically or semantically connected. The words must be contextually relevant to the preceding story or content, and the semantic relationships should be meaningful and justifiable.
+
+For each triplet, the student will be asked: “Tell me two words that go together” and then to provide a justification. Students must identify two distinct pairings and explain why they go together. Repeated attempts are allowed.
 
 Examples:
 dog-cat-bone: (dog, cat), because they are both animals
@@ -20,12 +20,26 @@ light-sun-feather: (light, sun), because the sun produces light
                    (light, feather), because a feather is light / not heavy
 """
 SUBTASK1_INSTRUCTION_CONSTRAINTS = """
-- Each challenge presents a word triplet (x-y-z) and asks the student to choose words that go together and explain why.
-- For each triplet, generate exactly 2 correct pairings with associated justifications.
-- Justifications should be based on the actual meaning of words and nothing else
-- Triplets should be chosen based on their contextual relationship with the narrative
-- Do not define words.
-- Try to avoid ambiguity, at least one pair within any triplet should explicitly not match.
+Triplet Structure
+    Each challenge presents exactly three words in the form (x-y-z).
+    Words must be contextually relevant to the narrative or preceding content.
+
+Pairings and Justifications
+    For each triplet, generate exactly two correct pairings (no more, no less).
+    Each pairing must include a short justification that reflects a true semantic relationship between the words.
+    Justifications must be based only on word meaning or real-world knowledge, not definitions, rhymes, wordplay, spelling, or phonetics.
+
+Semantic Validity
+    At least two words must clearly go together in meaning.
+    At least one word in the triplet must not pair well with the third, ensuring that not all three words form a single interchangeable group. This avoids ambiguity.
+
+Output Restrictions
+    Do not define words.
+    Do not invent new words or fictional terms.
+    Do not provide additional explanations beyond the required pairings and justifications.
+    The final output must include:
+        The word triplet.
+        Exactly two pairings, each followed by a justification.
 """
 
 SUBTASK2_INSTRUCTION_PROMPT = """

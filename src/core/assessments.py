@@ -1,5 +1,11 @@
+import csv
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 from enum import Enum
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from typing import List, Optional, ClassVar, Dict, Type
 
 from pydantic import BaseModel, Field
@@ -9,22 +15,27 @@ from core.challenges import ChallengeTriplet, Pairing, BaseChallenge
 
 
 
-class ItemScoreEnum(int, Enum):
-    incorrect = 0
-    correct = 1
+class ItemScoreEnum(str, Enum):
+    incorrect = "0"
+    correct = "1"
 
 
 
 class BaseAssessmentExtractSchema(BaseModel):
-    """The Pydantic schema for a TILLS subtask's extracted response"""
+    """The Pydantic schema for a subtask's extracted response"""
     pass
 
 
 
 class BaseAssessmentEvalSchema(BaseModel):
-    """The Pydantic schema for a TILLS subtask's evaluated response"""
+    """The Pydantic schema for a subtask's evaluated response"""
     pass
 
+
+
+class BaseAssessmentErrorAnalysisSchema(BaseModel):
+    """The Pydantic schema for a subtask's error pattern analysis"""
+    pass
 
 
 class BaseAssessmentSubtask(ABC):
@@ -33,6 +44,9 @@ class BaseAssessmentSubtask(ABC):
     type_key: str
     extraction_schema: Type["BaseAssessmentExtractSchema"]
     evaluation_schema: Type["BaseAssessmentEvalSchema"]
+    error_analysis_schema: Type["BaseAssessmentErrorAnalysisSchema"]
+
+    max_item_score: int
 
     def __init_subclass__(cls):
         if hasattr(cls, "type_key"):
@@ -54,6 +68,22 @@ class BaseAssessmentSubtask(ABC):
 
         Returns:
             formatted_extraction_input (str): Student response formatted for the extraction prompt
+        """
+
+        raise NotImplementedError
+
+
+    @abstractmethod
+    def filter_extracted_answers(self, structured_student_response: Type["BaseAssessmentExtractSchema"], raw_student_response: Dict[str, any]) -> Type["BaseAssessmentExtractSchema"]:
+        """
+        Filters the extracted student answers to ensure only correct responses are present.
+
+        Args:
+            raw_student_response (Dict): Student's raw response to the given subtask challenge item
+            structured_student_response (BaseAssessmentExtractSchema): Student answers to the given subtask challenge item
+
+        Returns:
+            filtered_student_response (BaseAssessmentExtractSchema): Filtered student answers to the given subtask challenge item
         """
 
         raise NotImplementedError
@@ -118,6 +148,19 @@ class BaseAssessmentSubtask(ABC):
         """
 
         raise NotImplementedError
+    
+
+    @abstractmethod
+    def export_to_csv_and_plots(self, assessment_history: list[Type["BaseAssessmentEvalSchema"]], score_summary: Dict[str, any]):
+        """
+        Exports the current assessment history and score summary to various plots and CSV files.
+
+        Args:
+            assessment_history (list): The history of evaluated student answers
+            score_summary (dict): Summary of the current challenge assessment scores
+        """
+
+        raise NotImplementedError
 
 
 
@@ -127,18 +170,41 @@ class BaseAssessmentSubtask(ABC):
 ############ SUBTASK 1: Vocabulary Awareness ############
 
 
-class VAItemScoreEnum(int, Enum):
-    zero = 0
-    one = 1
-    two = 2
+class VAItemScoreEnum(str, Enum):
+    zero = "0"
+    one = "1"
+    two = "2"
+
+
+
+class VAErrorCategoryEnum(str, Enum):
+    semantic_mismatch = "semantic_mismatch"
+    justification_vague = "justification_vague"
+    off_topic = "off_topic"
+    incomplete = "incomplete"
+    other = "other"
+    none = "none"
 
 
 
 class VAPairingList(BaseAssessmentExtractSchema):
     pairings: List[Pairing] = Field(
-        description="List of word pairs with their associated justification for a specific triplet."
+        max_length=2,
+        description="List of 1 or 2 word pairs with their associated justification for a specific triplet."
     )
 
+
+
+class VAErrorAnalysis(BaseAssessmentErrorAnalysisSchema):
+    category: VAErrorCategoryEnum = Field(
+        default="None",
+        description="A short tag indicating the most likely error category in the student's incorrect response."
+    )
+
+    category_reasoning: str = Field(
+        default="No incorrect response to analyze.",
+        description="A brief explanation justifying why this error category was chosen."
+    )
 
 
 
@@ -157,6 +223,10 @@ class VAPairingEvaluation(BaseModel):
 
     score: ItemScoreEnum = Field(
         description="Numerical score for this response: 1 = correct, if both word pair AND justification are correct; 0 = incorrect, if word pair and/or justification is incorrect."
+    )
+
+    error_analysis: VAErrorAnalysis = Field(
+        description="Error tagging and reasoning for incorrect responses. Resorts to default values if the response is correct."
     )
 
 
@@ -180,8 +250,8 @@ class VAItemEvaluation(BaseAssessmentEvalSchema):
         # TODO: Incorporate a way for the narrative agent to encourage the student to make 2 pairs if only one is made.
         # assert len(self.evaluations) == 2, f"Expected 2 pairings, got {len(self.evaluations)}.\n"
 
-        total = sum(eval.score.value for eval in self.evaluations)
-        self.total_score = VAItemScoreEnum(total)
+        total = sum(int(eval.score.value) for eval in self.evaluations)
+        self.total_score = VAItemScoreEnum(str(total))
 
 
 
@@ -192,11 +262,41 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
     extraction_schema = VAPairingList
     evaluation_schema = VAItemEvaluation
 
+    max_item_score = 2
+
 
     def format_extraction_input(self, raw_student_response):
         # return raw_student_response["alphabetic"]
         return raw_student_response
 
+
+
+    def filter_extracted_answers(self, structured_student_response, raw_student_response):
+
+        ranked = []
+        pair_dict = defaultdict(list)
+        student_text = raw_student_response.lower()
+
+        for pair in structured_student_response.pairings:
+            key = tuple(sorted(pair.words))
+            pair_dict[key].append(pair)
+
+
+        for key, candidates in pair_dict.items():
+            best = max(
+                candidates,
+                key=lambda p: (
+                    2 if p.justification.strip().lower() in student_text else 0
+                    + sum(word in student_text for word in p.justification.strip().lower().split())
+                )
+            )
+
+            ranked.append(best)
+
+
+        return VAPairingList(pairings=ranked[:2])
+
+                         
 
 
     def format_evaluation_input(self, structured_student_response, challenge_item):
@@ -217,7 +317,7 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
             for pair in challenge_item.pairings
         )
 
-        return (
+        return None if student_lines == "" else (
             f"Triplet: {triplet_line}\n\n"
             f"Student Response: {student_lines}\n\n"
             f"Expected Response: {expected_lines}"
@@ -233,18 +333,96 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
 
 
     def check_basal_rule(self, scores):
-        """
-        TILLS Basal Rule for subtask 1: Four consecutive scores of 2 (both parts of each item must be correct)
-        """
-
         return scores[-1] < 2 if len(scores) < 4 else False
 
 
 
     def check_ceiling_rule(self, scores):
-        """
-        TILLS Ceiling Rule for subtask 1: Six scores of 0 within a sequence of eight consecutive items
-                            (both parts of each item must be incorrect on 6 out of 8 items)
-        """
-
         return scores[-8:].count(0) >= 6 if len(scores) >= 8 else False
+    
+
+
+    def export_to_csv_and_plots(self, assessment_history, score_summary, dir="src/agents/outputs/"):
+
+        # Export to CSV
+
+        history_filename = dir + "VA_assessment_history.csv"
+
+        with open(history_filename, 'w', newline="") as file:
+            writer = csv.writer(file, quoting=csv.QUOTE_ALL)
+            writer.writerow(
+                [
+                    "Item", "Pair", "Justification", "Pair Valid", "Justification Valid", "Score", "Error Category", "Error Reasoning"
+                ]
+            )
+
+            for i, response in enumerate(assessment_history):
+                for eval in response.evaluations:
+                    writer.writerow(
+                        [
+                            i + 1,
+                            " & ".join(eval.evaluated_pairing.words),
+                            eval.evaluated_pairing.justification,
+                            eval.pair_is_valid,
+                            eval.justification_is_valid,
+                            eval.score.value,
+                            eval.error_analysis.category.value,
+                            eval.error_analysis.category_reasoning
+                        ]
+                    )
+
+        
+
+        score_filename = dir + "score_summary.csv"
+
+        with open(score_filename, 'w', newline="") as file:
+            writer = csv.writer(file, quoting=csv.QUOTE_ALL)
+            writer.writerow(
+                [
+                    "Subtask", "Total Items", "Total Score", "Average Score"
+                ]
+            )
+
+            writer.writerow(
+                [
+                    "Vocabulary Awareness", score_summary["total_items"], score_summary["total_score"], score_summary["normalized_average"]
+                ]
+            )
+
+
+        
+        # Plot the heatmap
+
+        num_items = len(assessment_history)
+        heatmap_data = np.full((num_items, 2), np.nan)
+
+        heatmap_filename = dir + "per_pair_score_heatmap.png"
+
+        for i, response in enumerate(assessment_history):
+            for j, eval in enumerate(response.evaluations):
+                heatmap_data[i, j] = eval.score.value
+
+        cmap = sns.color_palette(["lightcoral", "lightgray", "mediumseagreen"])  # 0, NaN, 1
+        bounds = [-0.5, 0.1, 0.9, 1.5]
+        norm = plt.matplotlib.colors.BoundaryNorm(bounds, len(cmap))
+
+        plt.figure(figsize=(6, num_items * 0.6))
+        sns.heatmap(
+            heatmap_data,
+            annot=True,
+            fmt=".0f",
+            linewidths=0.5,
+            cmap=cmap,
+            norm=norm,
+            cbar=False,
+            xticklabels=["Pair 1", "Pair 2"],
+            yticklabels=[f"{i+1}" for i in range(num_items)]
+        )
+
+        plt.title("VA Per-Pair Accuracy Heatmap")
+        plt.xlabel("Pair Index")
+        plt.ylabel("Item")
+        plt.tight_layout()
+
+        plt.savefig(heatmap_filename, dpi=300)
+        plt.close()

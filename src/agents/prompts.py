@@ -3,64 +3,90 @@ ASSESSMENT_PROMPTS = {
 
     "Vocabulary Awareness": {
         "description": """
-                            Each challenge presents a triplet of words (e.g. "dog-cat-bone") and the student is asked to
-                            choose 2 words that go together and justify their choice. For each triplet, the student must
-                            provide 2 pairs with justifications for each.
+                        Each challenge presents a triplet of words (e.g. "dog-cat-bone") and the student is asked to 
+                        choose 2 words that go together and justify their choice. For each triplet, the student must 
+                        provide 2 pairs with justifications for each.
 
-                            Examples:
-                            dog-cat-bone: (dog, cat), because they are both animals
-                                        (dog, bone), because dogs like bones
+                        Examples:
+                        dog-cat-bone: (dog, cat), because they are both animals
+                                    (dog, bone), because dogs like bones
 
-                            light-sun-feather: (light, sun), because the sun produces light
-                                            (light, feather), because a feather is light / not heavy
-                        """,
-
-
+                        light-sun-feather: (light, sun), because the sun produces light
+                                        (light, feather), because a feather is light / not heavy
+                    """,
         "extraction": """
                         You are given student responses to Vocabulary Awareness (VA) challenges.
 
-                        Your task is to extract the pairs and their justifications from the given student response.
+                        Your job is to extract word pairs and justifications exactly as the student said them — even if they are unusual or incorrect.
 
-                        Remember that a student can make atmost 2 pairs. Only extract the pairs present in the student response. Do not add or repeat pairs.
+                        - Do not reinterpret or "fix" student responses.
+                        - Do not infer better or more plausible pairings.
+                        - Only extract what the student actually wrote, exactly as they wrote it.
+                        - If the student says "cat and bone", extract ("cat", "bone") — even if you think "dog and bone" would make more sense.
+
+                        Important: if a pair is not explicitly stated, do not include it.
 
                         Example:
-                        - Student Response: "I think its dog and cat because they are animals and dog and bone because dogs like bones."
-                        - Output:  (dog, cat): "they are animals"
-                                (dog, bone): "dogs like bones"
+
+                        Student: "cat and bone because cats chew bones, and cat and dog because they are animals."
+
+                        Correct Extraction:
+                        (cat, bone): "cats chew bones"
+                        (cat, dog): "they are animals"
+
+                        Incorrect Extraction:
+                        (dog, bone): "dogs like bones" ← This was not said and must not be added.
 
                     """,
 
 
         "evaluation": """
-                        You are responsible for evaluating student responses to Vocabulary Awareness (VA) challenges.
+                        You are evaluating a child's Vocabulary Awareness (VA) response.
+                        Each item gives a triplet (e.g., "light, sun, feather"). The child selects 2 word pairs and gives a justification for each.
 
-                        Your task is to verify whether the student's selected word pair and their justification for each pair is valid, given the expected response.
-                        If BOTH word pair and justification are correct, score 1, else score 0. Then, compute the total score as the sum of scores for each evaluated pair. The maximum total score is 2.
+                        Your task:
+                        1. Evaluate if each word pair and justification are valid.
+                        2. Score: 1 = both pair and justification are valid; 0 = otherwise.
+                        3. If score is 0, assign an error category and a short explanation.
+                        4. Compute total score (max = 2).
 
-                        Remember that a student can make atmost 2 pairs. Only evaluate the pairs present in the student response. Do not add or repeat evaluations.
+                        Error categories:
+                        - semantic_mismatch: the words aren’t meaningfully related.
+                        - justification_vague: explanation is too vague or generic.
+                        - off_topic: the response is unrelated to the task or triplet.
+                        - incomplete: fewer than 2 pairs or missing justification.
+                        - other: doesn’t fit above.
+
+                        Be strict:
+                        - Only accept pairs with clear, commonly understood semantic relationships.
+                        - Reject guesses, puns, or surface-level links.
+                        - If the justification sounds okay but the words don’t belong together, mark as invalid.
 
                         Example:
-                        - Triplet Pair: (light, sun, feather)
 
-                        - Student Response:
-                            (light, sun): light comes from sun
-                            (light, feather): feathers are light
+                        Triplet: (light, sun, feather)  
+                        Expected Pairs:  
+                        - (light, sun): because the sun gives off light  
+                        - (light, feather): because a feather is light / not heavy
 
-                        - Expected Response:
-                            (light, sun): because sun gives light / both are bright
-                            (light, feather): because feather is light / not heavy
+                        Student Pair 1:  
+                        Words: light, sun  
+                        Justification: the sun produces light  
+                        Pair valid: yes  
+                        Justification valid: yes  
+                        Score: 1  
+                        Error Category: none  
+                        Error Reasoning: Clear and accurate semantic link.
 
-                        - Output:
-                            (light, sun): True
-                            "light comes from sun": True
-                            Score: 1
-
-                            (feather, light): True
-                            "feathers are light": True
-                            Score: 1
-
-                            Total Score = 1 + 1 = 2
-                    """
+                        Student Pair 2:  
+                        Words: sun, feather  
+                        Justification: both are light  
+                        Pair valid: no  
+                        Justification valid: no  
+                        Score: 0  
+                        Error Category: semantic_mismatch  
+                        Error Reasoning: “Light” has different meanings here; this pair lacks a valid semantic relationship.
+                    """,
     },
 }
 
