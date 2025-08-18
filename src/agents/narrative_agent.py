@@ -94,7 +94,7 @@ class NarrativeAgent(BaseAgent):
         state.last_agent = self.name
 
         # Check if the survey is finished
-        if next_question.content.endswith("<END>"):
+        if "<END>" in next_question.content[-15:]:
             state = self.finish_survey(state)
 
         return state
