@@ -1,3 +1,5 @@
+
+import torch
 import whisper
 import numpy as np
 import sounddevice as sd
@@ -10,7 +12,8 @@ def get_stt_model(model_name: str = 'tiny'):
 
 
 def get_tts_model(model_name: str = 'tts_models/multilingual/multi-dataset/xtts_v2'):
-    return TTS(model_name=model_name, progress_bar=False, gpu=True)
+    gpu_available = torch.cuda.is_available()
+    return TTS(model_name=model_name, progress_bar=False, gpu=gpu_available)
 
 
 def speak_text(tts_model: TTS, text: str, using_voice_clone=False):
