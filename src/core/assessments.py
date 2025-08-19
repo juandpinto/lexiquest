@@ -1,4 +1,6 @@
 import csv
+import os
+
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -348,7 +350,10 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
 
         history_filename = dir + "VA_assessment_history.csv"
 
-        with open(history_filename, 'w', newline="") as file:
+        if not os.path.exists(dir):
+            os.makedirs(dir)
+
+        with open(history_filename, 'w+', newline="") as file:
             writer = csv.writer(file, quoting=csv.QUOTE_ALL)
             writer.writerow(
                 [
@@ -375,7 +380,10 @@ class VocabularyAwarenessSubtask(BaseAssessmentSubtask):
 
         score_filename = dir + "score_summary.csv"
 
-        with open(score_filename, 'w', newline="") as file:
+        """if not os.path.exists(dir):
+            os.makedirs(dir)"""
+
+        with open(score_filename, 'w+', newline="") as file:
             writer = csv.writer(file, quoting=csv.QUOTE_ALL)
             writer.writerow(
                 [

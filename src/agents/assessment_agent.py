@@ -4,9 +4,8 @@ from langchain_ollama import ChatOllama
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from pydantic import BaseModel
-
-from utils import BaseAgent
-from prompts import ASSESSMENT_PROMPTS
+from .utils import BaseAgent
+from .prompts import ASSESSMENT_PROMPTS
 from core.states import FullState, AssessmentState
 from core.challenges import BaseChallenge, Pairing, ChallengeTriplet
 from core.assessments import BaseAssessmentSubtask, BaseAssessmentExtractSchema, BaseAssessmentEvalSchema
