@@ -96,7 +96,10 @@ Interact with the system via the Gradio web interface. You can use OpenAI or Goo
 - [Pydantic](https://docs.pydantic.dev/)
 - [python-dotenv](https://pypi.org/project/python-dotenv/)
 
-See `requirements.txt` for the full list.
+See [`requirements.txt`](requirements.txt) for the full list.
+
+To use speech to text, you'll also need [FFmpeg](https://ffmpeg.org) installed.
+
 
 ## License
 
